@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import type { ProcessamentoLancamento } from '@/lib/types'
 
 const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -25,6 +26,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [totalLancamentos, setTotalLancamentos] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ProcessamentoLancamento | null>(null)
 
   const refreshCount = useCallback(() => {
     fetch('/api/lancamentos/count')
@@ -43,19 +45,17 @@ export default function Dashboard() {
     refreshCount()
   }, [refreshCount])
 
-  const handleDelete = useCallback(async (p: ProcessamentoLancamento) => {
-    const nome = p.original_filename || 'este processamento'
-    if (!confirm(`Apagar "${nome}"?\n\nIsso remove o PDF, os lançamentos salvos no banco e todos os dados extraídos. Não dá para desfazer.`)) {
-      return
-    }
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget) return
 
-    setDeletingId(p.id)
+    setDeletingId(deleteTarget.id)
     try {
-      const res = await fetch(`/api/processamentos/${p.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/processamentos/${deleteTarget.id}`, { method: 'DELETE' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao apagar')
 
-      setProcessamentos(prev => prev.filter(item => item.id !== p.id))
+      setProcessamentos(prev => prev.filter(item => item.id !== deleteTarget.id))
+      setDeleteTarget(null)
       refreshCount()
       toast.success(
         data.lancamentosRemovidos > 0
@@ -67,7 +67,7 @@ export default function Dashboard() {
     } finally {
       setDeletingId(null)
     }
-  }, [refreshCount])
+  }, [deleteTarget, refreshCount])
 
   return (
     <div>
@@ -174,7 +174,7 @@ export default function Dashboard() {
                         size="icon-sm"
                         className="text-gray-400 hover:text-red-600 hover:bg-red-50"
                         disabled={deletingId === p.id}
-                        onClick={() => handleDelete(p)}
+                        onClick={() => setDeleteTarget(p)}
                         title="Apagar processamento"
                       >
                         <Trash2 className="size-4" />
@@ -187,6 +187,32 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={open => { if (!open) setDeleteTarget(null) }}
+        title="Apagar processamento?"
+        description={
+          <>
+            <p>
+              Você está prestes a apagar{' '}
+              <span className="font-medium text-foreground">
+                {deleteTarget?.original_filename || 'este processamento'}
+              </span>
+              .
+            </p>
+            <p>
+              Isso remove o PDF, os lançamentos salvos no banco e todos os dados extraídos.
+              <span className="font-medium text-red-600"> Não dá para desfazer.</span>
+            </p>
+          </>
+        }
+        confirmLabel="Apagar"
+        cancelLabel="Cancelar"
+        variant="destructive"
+        loading={!!deletingId}
+        onConfirm={handleDelete}
+      />
     </div>
   )
 }
