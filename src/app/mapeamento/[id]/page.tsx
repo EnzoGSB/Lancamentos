@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { Undo2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -65,6 +66,12 @@ export default function MapeamentoPage() {
   const [analise, setAnalise] = useState<AnaliseIA | null>(null)
   const [lancamentos, setLancamentos] = useState<LancamentoAI[]>([])
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
+  const [undoStack, setUndoStack] = useState<LancamentoAI[][]>([])
+  const undoStackRef = useRef(undoStack)
+  undoStackRef.current = undoStack
+
+  const snapshotLancamentos = (items: LancamentoAI[]) =>
+    items.map(l => ({ ...l }))
 
   useEffect(() => {
     async function fetchData() {
@@ -76,6 +83,7 @@ export default function MapeamentoPage() {
         if (data.analise_ia) setAnalise(data.analise_ia as AnaliseIA)
         if (data.lancamentos_ai?.lancamentos) {
           setLancamentos(data.lancamentos_ai.lancamentos as LancamentoAI[])
+          setUndoStack([])
         }
       } catch {
         toast.error('Erro ao carregar processamento')
@@ -96,6 +104,7 @@ export default function MapeamentoPage() {
       if (data.analise_ia) setAnalise(data.analise_ia as AnaliseIA)
       if (data.lancamentos_ai?.lancamentos) {
         setLancamentos(data.lancamentos_ai.lancamentos as LancamentoAI[])
+        setUndoStack([])
         clearInterval(interval)
       }
       if (data.status === 'erro') {
@@ -119,6 +128,7 @@ export default function MapeamentoPage() {
       if (res.ok) {
         setAnalise(data.analise)
         setLancamentos(data.lancamentos)
+        setUndoStack([])
         setStatus('aguardando_confirmacao')
         toast.success(`${data.lancamentos.length} tipologias extraídas pela IA.`)
       } else {
@@ -164,6 +174,17 @@ export default function MapeamentoPage() {
     setSelectedCell({ row, field })
   }, [])
 
+  const desfazer = useCallback(() => {
+    setUndoStack(prev => {
+      if (prev.length === 0) return prev
+      const next = [...prev]
+      const snapshot = next.pop()!
+      setLancamentos(snapshot)
+      toast.success('Alteração desfeita')
+      return next
+    })
+  }, [])
+
   const aplicarParaColuna = useCallback(() => {
     if (!selectedCell) {
       toast.error('Selecione uma célula antes de aplicar')
@@ -171,9 +192,26 @@ export default function MapeamentoPage() {
     }
     const { row, field } = selectedCell
     const valor = lancamentos[row]?.[field]
+    setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
     setLancamentos(prev => prev.map(l => ({ ...l, [field]: valor })))
     toast.success(`"${FIELD_LABELS[field]}" aplicado em ${lancamentos.length} linhas`)
   }, [selectedCell, lancamentos])
+
+  useEffect(() => {
+    if (status !== 'aguardando_confirmacao') return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'z' || e.shiftKey) return
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (undoStackRef.current.length === 0) return
+      e.preventDefault()
+      desfazer()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [status, desfazer])
 
   if (loading) {
     return <div className="flex items-center justify-center min-h-[50vh]"><p className="text-gray-500">Carregando...</p></div>
@@ -255,6 +293,17 @@ export default function MapeamentoPage() {
                   : 'Clique em uma célula e depois aplique para toda a coluna'}
               >
                 Aplicar para toda a coluna
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={desfazer}
+                disabled={undoStack.length === 0}
+                title="Desfazer última aplicação em coluna (Ctrl+Z)"
+              >
+                <Undo2 className="size-3.5" />
+                Desfazer
               </Button>
               {selectedCell && (
                 <span className="text-xs text-blue-600">
