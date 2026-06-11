@@ -32,12 +32,17 @@ Regras críticas:
 3. IGNORE completamente: KIT CONFORTO, KIT AUTOMAÇÃO, KIT DE ACABAMENTO, KIT BÁSICO e qualquer "kit" — são pacotes adicionais, NÃO são imóveis
 4. Páginas com tabelas UNIDADES + PREÇO DE VENDA por andar (mesmo com colunas ATO/MENSAIS/FINANCIAMENTO) contêm dados de imóvel — extraia TODAS as tipologias de TODAS as páginas, inclusive páginas 9 em diante.
 5. Para tabelas com valores por andar (ex: "1º andar R$856.781 ... 26º andar R$985.299"), agrupe por variante: valor_minimo=menor PREÇO DE VENDA, valor_maximo=maior, andar=faixa "1º-26º"
-6. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 503146)
-7. CAMPO unidade: colunas Unidade/Apto/Ap./Apartamento. Coluna UNIDADES com "1º andar" → use andar, não unidade.
-8. CAMPO andar: pavimento/nível (3º, 12º andar, Térreo, 1º-26º).
-9. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
-10. TEXTO NATIVO: nomes e valores EXATOS do documento inteiro. Use para não perder tipologias em nenhuma página.
-11. Se um campo não existe, use null — NÃO invente dados
+6. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 503146). SEMPRE preencha quando o PDF informar — colunas comuns: "Valor Total", "Preço", "Preço de Venda", "R$".
+7. Tabelas largas (ex: Lindenberg): tipologia/metragem à esquerda e preço à direita. Se esta faixa mostrar a linha mas não a coluna de preço, busque o valor no TEXTO NATIVO para a mesma tipologia + metragem + unidade/andar.
+8. CAMPO unidade: colunas Unidade/Apto/Ap./Apartamento. Coluna UNIDADES com "1º andar" → use andar, não unidade.
+9. CAMPO andar: pavimento/nível (3º, 12º andar, Térreo, 1º-26º).
+10. CÉLULAS MESCLADAS (entrega, bairro, empreendimento): quando "Entrega", "Junho/2026", "Pronto" etc. aparecer numa célula mesclada que cobre várias linhas, REPITA data_entrega em TODAS as linhas daquele bloco/empreendimento — não deixe só a primeira linha preenchida.
+11. CAMPO unidade: só preencha quando a linha listar apartamento específico (1009, 1011). Linhas de catálogo por tipologia (ex: "Residencial" sem apto) → unidade null.
+12. CAMPO andar: pavimento/nível quando a tabela informar (coluna Andar/Pavimento). Se a coluna não couber na faixa, busque no TEXTO NATIVO.
+13. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
+14. TEXTO NATIVO: nomes, valores, entrega, unidade e andar EXATOS. Use para preencher campos faltantes de linhas visíveis nesta faixa.
+15. NÃO crie linha de tipologia sem preço se o texto nativo tiver valor para aquela combinação — preencha valor_minimo/valor_maximo.
+16. Se um campo não existe no PDF para aquela linha, use null — NÃO invente dados
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -56,10 +61,15 @@ Regras CRÍTICAS:
 5. IGNORE KIT CONFORTO, KIT AUTOMAÇÃO, KIT DE ACABAMENTO e qualquer "kit" — não são imóveis.
 6. CAMPO unidade: colunas Unidade/Apto/Ap./Apartamento quando existirem. Coluna UNIDADES com "1º andar", "2º andar" → use andar, não unidade.
 7. CAMPO andar: pavimento/nível (3º, 12º andar, 1º-26º). Não confunda com código de apartamento.
-8. valor_minimo e valor_maximo: números puros sem R$, sem pontos de milhar.
-9. Resumo de parcelas/condições de pagamento → mais_detalhes (não crie linha extra por parcela).
-10. TEXTO NATIVO: dicionário do documento inteiro para nomes/valores EXATOS. Extraia APENAS blocos VISÍVEIS nesta faixa; use o texto para escrever corretamente tipologia, metragem e preços.
-11. Se um campo não existe, use null — NÃO invente dados.
+8. valor_minimo e valor_maximo: números puros sem R$, sem pontos de milhar. OBRIGATÓRIO quando o PDF informar preço da linha.
+9. Tabelas largas (ex: Lindenberg): cada linha de tipologia/unidade tem preço em coluna à direita ("Valor Total", "Preço", "R$"). Se a coluna de preço não couber nesta faixa da imagem, localize o valor no TEXTO NATIVO pela mesma tipologia + metragem + unidade/andar.
+10. NÃO deixe linhas com tipologia/metragem sem valor_minimo se o texto nativo tiver o preço correspondente.
+11. CÉLULAS MESCLADAS: data_entrega (ex: Junho/2026) em célula mesclada vale para TODAS as linhas do mesmo bloco — repita em cada linha JSON do bloco.
+12. CAMPO unidade: apenas para linhas com apartamento identificado (1009, 1011). Linhas só de tipologia/planta → unidade null.
+13. CAMPO andar: preencha quando houver coluna de andar/pavimento; use TEXTO NATIVO se a coluna estiver fora da faixa.
+14. Resumo de parcelas/condições de pagamento → mais_detalhes (não crie linha extra por parcela).
+15. TEXTO NATIVO: dicionário para nomes, preços, entrega, unidade e andar de linhas visíveis nesta faixa.
+16. Se um campo não existe no PDF para aquela linha, use null — NÃO invente dados.
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -80,11 +90,12 @@ Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
 7. Se esta FAIXA cortou o cabeçalho de região/empreendimento, descubra o bairro pelo NOME DO EMPREENDIMENTO, pelo ENDEREÇO da linha ou pelo TEXTO NATIVO — NUNCA repita cegamente o bairro da célula mesclada acima se o empreendimento indicar outro bairro.
 8. SEMPRE preencha empreendimento, bairro e data_entrega quando a informação existir.
 9. NÃO use o nome da construtora como substituto para empreendimento.
-10. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 1625000).
-11. IGNORE cabeçalhos de coluna, rodapés, notas e texto explicativo — apenas linhas de dados de imóveis.
-12. TEXTO NATIVO: você recebe o TEXTO NATIVO do PDF (nomes e valores EXATOS, mas referente ao DOCUMENTO INTEIRO, fora de ordem). REGRA ABSOLUTA: extraia EXCLUSIVAMENTE as linhas que aparecem VISUALMENTE NESTA FAIXA da imagem. O texto nativo serve APENAS como dicionário para escrever corretamente os NOMES e VALORES das linhas que você VÊ na imagem — NÃO adicione linhas que não estão visíveis nesta faixa. NUNCA invente um nome que não apareça no texto nativo.
-13. CAMPO bairro: normalize como "Bairro, Cidade" (vírgula). Ex: "Vila da Saúde, São Paulo". Confira coerência com o nome do empreendimento.
-14. CAMPO empreendimento: nome limpo, sem sufixos espúrios ("*", "¹", notas de rodapé).
+10. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 1625000). SEMPRE preencha quando a linha tiver preço — colunas "Valor Total", "Preço", "Preço de Venda", "R$".
+11. Tabelas largas: se a faixa mostrar tipologia/metragem mas a coluna de preço estiver cortada, use o TEXTO NATIVO para preencher valor_minimo/valor_maximo daquela linha.
+12. IGNORE cabeçalhos de coluna, rodapés, notas e texto explicativo — apenas linhas de dados de imóveis.
+13. TEXTO NATIVO: você recebe o TEXTO NATIVO do PDF (nomes e valores EXATOS, mas referente ao DOCUMENTO INTEIRO, fora de ordem). REGRA ABSOLUTA: extraia EXCLUSIVAMENTE as linhas que aparecem VISUALMENTE NESTA FAIXA da imagem. O texto nativo serve como dicionário para NOMES, VALORES e PREÇOS das linhas visíveis — inclusive quando o preço está fora da faixa cortada. NÃO adicione linhas que não estão visíveis nesta faixa. NUNCA invente um nome que não apareça no texto nativo.
+14. CAMPO bairro: normalize como "Bairro, Cidade" (vírgula). Ex: "Vila da Saúde, São Paulo". Confira coerência com o nome do empreendimento.
+15. CAMPO empreendimento: nome limpo, sem sufixos espúrios ("*", "¹", notas de rodapé).
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -180,7 +191,7 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoN
     return deduplicar(result)
   }
 
-  const numFaixas = paginas.length >= 10 ? 4 : paginas.length >= 6 ? 3 : 2
+  const numFaixas = paginas.length >= 10 ? 5 : paginas.length >= 6 ? 4 : 3
   const totalPaginas = paginas.length
 
   type FaixaJob = { png: Buffer; pagina: number }
@@ -328,6 +339,7 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
     const maxs = [toNum(dest.valor_maximo), toNum(src.valor_maximo), ...mins].filter((n): n is number => n != null)
     if (mins.length) dest.valor_minimo = Math.min(...mins)
     if (maxs.length) dest.valor_maximo = Math.max(...maxs)
+    else if (mins.length && dest.valor_maximo == null) dest.valor_maximo = dest.valor_minimo
 
     for (const [campo, valor] of Object.entries(src) as [keyof LancamentoAI, unknown][]) {
       if (campo === 'valor_minimo' || campo === 'valor_maximo' || campo === 'bairro') continue
@@ -412,7 +424,32 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
     return resultado
   }
 
-  return fundirSemelhantes(Array.from(map.values()))
+  // Propaga data_entrega e normaliza bairro dentro do mesmo empreendimento (célula mesclada no PDF).
+  const propagarCamposEmpreendimento = (items: LancamentoAI[]): LancamentoAI[] => {
+    const porEmp = new Map<string, LancamentoAI[]>()
+    for (const l of items) {
+      const k = norm(l.empreendimento)
+      if (!k) continue
+      const arr = porEmp.get(k) ?? []
+      arr.push(l)
+      porEmp.set(k, arr)
+    }
+
+    for (const grupo of porEmp.values()) {
+      const entrega = grupo.find(l => l.data_entrega?.trim())?.data_entrega ?? null
+      let melhorBairro: string | null = null
+      for (const l of grupo) {
+        melhorBairro = escolherBairro(l.empreendimento, melhorBairro, l.bairro)
+      }
+      for (const l of grupo) {
+        if (!l.data_entrega?.trim() && entrega) l.data_entrega = entrega
+        if (melhorBairro) l.bairro = escolherBairro(l.empreendimento, l.bairro, melhorBairro)
+      }
+    }
+    return items
+  }
+
+  return propagarCamposEmpreendimento(fundirSemelhantes(Array.from(map.values())))
 }
 
 // Extração a partir do PDF inteiro (visão nativa) — usado no fluxo single
@@ -475,7 +512,7 @@ async function _extrairDeImagem(
 ): Promise<LancamentoAI[]> {
   const dataUrl = `data:image/png;base64,${png.toString('base64')}`
   const blocoTexto = textoNativo
-    ? `\n\nTEXTO NATIVO DO PDF (dicionário do DOCUMENTO INTEIRO — nomes e valores EXATOS, fora de ordem). Use-o APENAS para escrever corretamente os nomes/valores das linhas que você VÊ nesta faixa; NÃO adicione linhas que não estão visíveis na imagem; NUNCA invente nomes:\n${textoNativo.substring(0, 40000)}`
+    ? `\n\nTEXTO NATIVO DO PDF (dicionário do DOCUMENTO INTEIRO — nomes e valores EXATOS, fora de ordem). Use para preencher nomes, preços, entrega, unidade e andar das linhas VISÍVEIS nesta faixa. Se colunas estiverem cortadas na imagem (tabela larga), busque no texto nativo. NÃO adicione linhas invisíveis na faixa:\n${textoNativo.substring(0, 40000)}`
     : ''
 
   for (let attempt = 0; attempt < 2; attempt++) {
