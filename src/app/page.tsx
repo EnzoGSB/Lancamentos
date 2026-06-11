@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import type { ProcessamentoLancamento } from '@/lib/types'
 
 const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -21,6 +24,14 @@ export default function Dashboard() {
   const [processamentos, setProcessamentos] = useState<ProcessamentoLancamento[]>([])
   const [loading, setLoading] = useState(true)
   const [totalLancamentos, setTotalLancamentos] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const refreshCount = useCallback(() => {
+    fetch('/api/lancamentos/count')
+      .then(r => r.json())
+      .then(d => setTotalLancamentos(d.count ?? 0))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     fetch('/api/processamentos')
@@ -29,11 +40,34 @@ export default function Dashboard() {
       .catch(() => setProcessamentos([]))
       .finally(() => setLoading(false))
 
-    fetch('/api/lancamentos/count')
-      .then(r => r.json())
-      .then(d => setTotalLancamentos(d.count ?? 0))
-      .catch(() => {})
-  }, [])
+    refreshCount()
+  }, [refreshCount])
+
+  const handleDelete = useCallback(async (p: ProcessamentoLancamento) => {
+    const nome = p.original_filename || 'este processamento'
+    if (!confirm(`Apagar "${nome}"?\n\nIsso remove o PDF, os lançamentos salvos no banco e todos os dados extraídos. Não dá para desfazer.`)) {
+      return
+    }
+
+    setDeletingId(p.id)
+    try {
+      const res = await fetch(`/api/processamentos/${p.id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao apagar')
+
+      setProcessamentos(prev => prev.filter(item => item.id !== p.id))
+      refreshCount()
+      toast.success(
+        data.lancamentosRemovidos > 0
+          ? `Processamento apagado (${data.lancamentosRemovidos} lançamentos removidos).`
+          : 'Processamento apagado.'
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao apagar')
+    } finally {
+      setDeletingId(null)
+    }
+  }, [refreshCount])
 
   return (
     <div>
@@ -132,6 +166,17 @@ export default function Dashboard() {
                           Processar
                         </Link>
                       )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-gray-400 hover:text-red-600 hover:bg-red-50"
+                        disabled={deletingId === p.id}
+                        onClick={() => handleDelete(p)}
+                        title="Apagar processamento"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
                     </div>
                   </div>
                 )

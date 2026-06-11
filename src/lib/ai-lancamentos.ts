@@ -1,5 +1,6 @@
 import sharp from 'sharp'
 import { openai, AI_MODEL_ANALYZER, AI_MODEL_EXTRACTOR } from './openai'
+import { createPDFParser } from './pdf-parse-server'
 import type { AnaliseIA, LancamentoAI } from './types'
 
 const LANCAMENTO_SCHEMA = `{
@@ -28,10 +29,12 @@ Regras críticas:
 1. Uma linha por tipologia (Studio, 1 dorm, 2 dorms, 2 suítes, 3 suítes, 4 suítes, Duplex, Garden, Loft, NR, etc.)
 2. NÃO ignore tipologias com suítes — "2 SUÍTES", "3 SUÍTES" são tão válidas quanto "2 dorms"
 3. IGNORE completamente: KIT CONFORTO, KIT AUTOMAÇÃO, KIT DE ACABAMENTO, KIT BÁSICO e qualquer "kit" — são pacotes adicionais, NÃO são imóveis
-4. Para tabelas com valores por andar (ex: "1º andar R$856.781 ... 26º andar R$985.299"), agrupe por tipologia: valor_minimo=menor valor, valor_maximo=maior valor
-5. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 503146)
-6. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
-7. Se um campo não existe, use null — NÃO invente dados
+4. Para tabelas com valores por andar (ex: "1º andar R$856.781 ... 26º andar R$985.299"), agrupe por tipologia: valor_minimo=menor valor, valor_maximo=maior valor, unidades=quantidade de andares/unidades listados para aquela tipologia
+5. CAMPO unidades: conte TODAS as unidades da tipologia no documento (andares, aptos ou coluna de quantidade). Se a tabela listar 26 andares para "2 dorms", unidades=26 — não subestime.
+6. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 503146)
+7. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
+8. TEXTO NATIVO: você recebe o texto digital do PDF (nomes, valores e contagens EXATOS, documento inteiro). Use-o para não perder tipologias em páginas posteriores e para confirmar a quantidade de unidades por tipologia.
+9. Se um campo não existe, use null — NÃO invente dados
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -44,7 +47,7 @@ ${LANCAMENTO_SCHEMA}
 
 Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
 1. CÉLULAS MESCLADAS: as colunas à esquerda (região, bairro e/ou empreendimento) frequentemente usam células mescladas que cobrem várias linhas de dados. Cada linha herda esses valores da célula mesclada imediatamente acima/à esquerda. NÃO propague o nome de um empreendimento para linhas que pertencem a OUTRO empreendimento — o valor muda quando começa um novo bloco.
-2. EXTRAIA TODOS os empreendimentos e TODAS as linhas de dados desta faixa — NÃO descarte nenhum bloco, mesmo que o layout seja incomum.
+2. EXTRAIA TODOS os empreendimentos e TODAS as linhas de dados desta faixa — NÃO descarte nenhum bloco, mesmo que o layout seja incomum. Blocos pequenos no meio ou no fim da faixa também contam — não pare após o primeiro empreendimento.
 3. AGREGUE POR TIPOLOGIA: gere uma linha por (empreendimento + tipologia + metragem). Se houver VÁRIAS unidades da mesma tipologia/metragem (andares ou números de apartamento diferentes, com preços diferentes), CONSOLIDE numa só: valor_minimo = menor preço, valor_maximo = maior preço.
 4. CAMPO unidades = QUANTIDADE de unidades daquela tipologia, somente se a tabela informar essa quantidade. Se a tabela lista unidades individuais (coluna "Unidade"/"Andar" com número do apartamento, ex: 112, 1009), NÃO use esse número como quantidade — deixe null.
 5. Se esta FAIXA cortou o cabeçalho de região/empreendimento, descubra o bairro pelo ENDEREÇO da linha (a rua indica o bairro) ou pelo TEXTO NATIVO. NUNCA repita cegamente o valor da linha anterior se houver dúvida.
@@ -86,7 +89,7 @@ REGRA PARA construtora:
       },
       {
         role: 'user',
-        content: `Nome do arquivo: "${filename}"\n\nTexto extraído do PDF:\n\n${texto.substring(0, 8000)}`,
+        content: `Nome do arquivo: "${filename}"\n\nTexto extraído do PDF:\n\n${texto.substring(0, 16000)}`,
       },
     ],
     temperature: 0.1,
@@ -100,10 +103,8 @@ REGRA PARA construtora:
 
 // Renderiza as páginas do PDF em alta resolução e retorna os PNGs (Buffer)
 async function renderizarPaginas(buffer: Buffer): Promise<Buffer[]> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { PDFParse } = require('pdf-parse')
-  const parser = new PDFParse({ data: buffer })
-  const result = await parser.getScreenshot({ scale: 3, base64: true })
+  const parser = createPDFParser(buffer)
+  const result = await parser.getScreenshot({ scale: 3, base64: true } as { scale: number })
 
   return (result.pages ?? []).map((p: { dataUrl?: string; base64?: string }) => {
     const b64 = (p.dataUrl ?? `data:image/png;base64,${p.base64}`).replace(/^data:image\/png;base64,/, '')
@@ -133,10 +134,17 @@ async function cortarEmFaixas(png: Buffer, n = 3, overlapPct = 0.03): Promise<Bu
 
 // SINGLE: poucas tipologias espalhadas em várias páginas → manda o PDF inteiro,
 // o modelo vê tudo e consolida naturalmente (uma linha por tipologia).
-export async function processarSingle(buffer: Buffer, analise: AnaliseIA): Promise<LancamentoAI[]> {
+export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoNativo = ''): Promise<LancamentoAI[]> {
   const pdfBase64 = buffer.toString('base64')
-  const contexto = `Construtora: ${analise.construtora}\nEmpreendimento: ${analise.empreendimentos_identificados[0] ?? 'identifique no PDF'}`
-  const result = await _extrairDePdf(SYSTEM_PROMPT_SINGLE, pdfBase64, contexto)
+  const contexto = [
+    `Construtora: ${analise.construtora}`,
+    `Empreendimento: ${analise.empreendimentos_identificados[0] ?? 'identifique no PDF'}`,
+    analise.empreendimentos_identificados.length > 1
+      ? `Nomes também presentes no documento: ${analise.empreendimentos_identificados.join(', ')}`
+      : null,
+    analise.resumo ? `Resumo: ${analise.resumo}` : null,
+  ].filter(Boolean).join('\n')
+  const result = await _extrairDePdf(SYSTEM_PROMPT_SINGLE, pdfBase64, contexto, textoNativo)
   return deduplicar(result)
 }
 
@@ -146,17 +154,49 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA): Promi
 // (nomes/valores exatos) para evitar alucinação.
 export async function processarMulti(buffer: Buffer, analise: AnaliseIA, textoNativo = ''): Promise<LancamentoAI[]> {
   const paginas = await renderizarPaginas(buffer)
-  const contexto = `Construtora principal: ${analise.construtora}`
+  const listaEmpreendimentos = analise.empreendimentos_identificados?.length
+    ? analise.empreendimentos_identificados.join(', ')
+    : 'identifique todos no PDF'
+  const contexto = [
+    `Construtora principal: ${analise.construtora}`,
+    `Empreendimentos no documento (${analise.empreendimentos_identificados?.length ?? '?'}): ${listaEmpreendimentos}`,
+    analise.resumo ? `Resumo: ${analise.resumo}` : null,
+    'Extraia TODOS os empreendimentos visíveis nesta faixa — inclusive blocos menores no meio/fim da tabela.',
+  ].filter(Boolean).join('\n')
 
-  // Cada página vira N faixas; todas as faixas são processadas em paralelo.
+  // Cada página vira N faixas; processa com concorrência limitada para evitar falhas silenciosas.
   const faixasPorPagina = await Promise.all(paginas.map(png => cortarEmFaixas(png, 3)))
   const todasFaixas = faixasPorPagina.flat()
 
-  const resultados = await Promise.all(
-    todasFaixas.map(faixa => _extrairDeImagem(SYSTEM_PROMPT_MULTI, faixa, contexto, textoNativo))
+  const resultados = await mapWithConcurrency(
+    todasFaixas,
+    4,
+    faixa => _extrairDeImagem(SYSTEM_PROMPT_MULTI, faixa, contexto, textoNativo)
   )
 
   return deduplicar(resultados.flat())
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return []
+  const results = new Array<R>(items.length)
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++
+      results[index] = await fn(items[index], index)
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker())
+  )
+  return results
 }
 
 // Consolida por (empreendimento + tipologia + metragem): mescla entradas com a mesma
@@ -170,13 +210,24 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
   const normMetragem = (s: string | null | undefined) =>
     ((s ?? '').match(/\d+[.,]?\d*/g) ?? []).map(n => n.replace(',', '.')).join('-')
 
-  const chave = (l: LancamentoAI) =>
-    `${norm(l.empreendimento)}|${norm(l.tipologia)}|${normMetragem(l.metragem)}`
-
   const toNum = (v: unknown): number | null => {
     if (v == null || v === '') return null
     const n = Number(v)
     return Number.isFinite(n) ? n : null
+  }
+
+  const chave = (l: LancamentoAI) => {
+    const emp = norm(l.empreendimento)
+    const bairro = norm(l.bairro)
+    const endereco = norm(l.endereco).slice(0, 24)
+    const tip = norm(l.tipologia)
+    const met = normMetragem(l.metragem)
+    // Inclui bairro/endereço para não colapsar empreendimentos distintos quando o nome vem vazio.
+    if (!emp) {
+      const val = toNum(l.valor_minimo)
+      return `|${bairro}|${endereco}|${tip}|${met}|${val ?? ''}`
+    }
+    return `${emp}|${bairro}|${tip}|${met}`
   }
 
   const map = new Map<string, LancamentoAI>()
@@ -197,6 +248,13 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
     // Preenche campos que estiverem vazios na entrada existente
     for (const [campo, valor] of Object.entries(l) as [keyof LancamentoAI, unknown][]) {
       if (campo === 'valor_minimo' || campo === 'valor_maximo') continue
+      if (campo === 'unidades') {
+        const a = toNum(existing.unidades)
+        const b = toNum(l.unidades)
+        if (a != null && b != null) existing.unidades = Math.max(a, b)
+        else if (a == null && b != null) existing.unidades = b
+        continue
+      }
       const atual = existing[campo]
       if ((atual == null || atual === '') && valor != null && valor !== '') {
         ;(existing as Record<string, unknown>)[campo] = valor
@@ -210,9 +268,14 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
 async function _extrairDePdf(
   systemPrompt: string,
   pdfBase64: string,
-  contexto: string
+  contexto: string,
+  textoNativo = ''
 ): Promise<LancamentoAI[]> {
   try {
+    const blocoTexto = textoNativo
+      ? `\n\nTEXTO NATIVO DO PDF (referência do DOCUMENTO INTEIRO — nomes, valores e contagens EXATOS). Use para confirmar tipologias em todas as páginas e contar unidades por tipologia:\n${textoNativo.substring(0, 40000)}`
+      : ''
+
     const completion = await openai.chat.completions.create({
       model: AI_MODEL_EXTRACTOR,
       messages: [
@@ -227,7 +290,7 @@ async function _extrairDePdf(
                 file_data: `data:application/pdf;base64,${pdfBase64}`,
               },
             },
-            { type: 'text', text: `${contexto}\n\nExtraia todas as tipologias deste empreendimento, uma por linha.` },
+            { type: 'text', text: `${contexto}\n\nExtraia todas as tipologias deste empreendimento, uma por linha.${blocoTexto}` },
           ],
         },
       ],
@@ -254,35 +317,41 @@ async function _extrairDeImagem(
   contexto: string,
   textoNativo = ''
 ): Promise<LancamentoAI[]> {
-  try {
-    const dataUrl = `data:image/png;base64,${png.toString('base64')}`
-    const blocoTexto = textoNativo
-      ? `\n\nTEXTO NATIVO DO PDF (dicionário do DOCUMENTO INTEIRO — nomes e valores EXATOS, fora de ordem). Use-o APENAS para escrever corretamente os nomes/valores das linhas que você VÊ nesta faixa; NÃO adicione linhas que não estão visíveis na imagem; NUNCA invente nomes:\n${textoNativo.substring(0, 22000)}`
-      : ''
+  const dataUrl = `data:image/png;base64,${png.toString('base64')}`
+  const blocoTexto = textoNativo
+    ? `\n\nTEXTO NATIVO DO PDF (dicionário do DOCUMENTO INTEIRO — nomes e valores EXATOS, fora de ordem). Use-o APENAS para escrever corretamente os nomes/valores das linhas que você VÊ nesta faixa; NÃO adicione linhas que não estão visíveis na imagem; NUNCA invente nomes:\n${textoNativo.substring(0, 40000)}`
+    : ''
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_EXTRACTOR,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
-            { type: 'text', text: `${contexto}\n\nEsta imagem é uma FAIXA (recorte horizontal) de uma página. Extraia EXCLUSIVAMENTE as linhas de dados VISÍVEIS nesta faixa, sem pular nenhuma e sem adicionar linhas de fora.${blocoTexto}` },
-          ],
-        },
-      ],
-      temperature: 0.1,
-      response_format: { type: 'json_object' },
-      max_tokens: 16000,
-    })
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: AI_MODEL_EXTRACTOR,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
+              { type: 'text', text: `${contexto}\n\nEsta imagem é uma FAIXA (recorte horizontal) de uma página. Extraia EXCLUSIVAMENTE as linhas de dados VISÍVEIS nesta faixa, sem pular nenhuma e sem adicionar linhas de fora.${blocoTexto}` },
+            ],
+          },
+        ],
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
+        max_tokens: 16000,
+      })
 
-    const content = completion.choices[0]?.message?.content
-    if (!content) return []
+      const content = completion.choices[0]?.message?.content
+      if (!content) continue
 
-    const parsed = JSON.parse(content)
-    return (parsed.lancamentos ?? []) as LancamentoAI[]
-  } catch {
-    return []
+      const parsed = JSON.parse(content)
+      return (parsed.lancamentos ?? []) as LancamentoAI[]
+    } catch (err) {
+      if (attempt === 1) {
+        console.error('[extrairDeImagem] falha na faixa após retry:', err)
+      }
+    }
   }
+
+  return []
 }

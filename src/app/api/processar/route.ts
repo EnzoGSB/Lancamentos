@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { analisarPDF, processarSingle, processarMulti } from '@/lib/ai-lancamentos'
+import { createPDFParser } from '@/lib/pdf-parse-server'
+
+export const runtime = 'nodejs'
+export const maxDuration = 300
 
 export async function POST(request: NextRequest) {
   const { processamentoId } = await request.json()
@@ -36,9 +40,7 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await fileData.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { PDFParse } = require('pdf-parse')
-    const parser = new PDFParse({ data: buffer })
+    const parser = createPDFParser(buffer)
     const textResult = await parser.getText()
     const extractedText: string = textResult.text
 
@@ -59,7 +61,7 @@ export async function POST(request: NextRequest) {
       .eq('id', processamentoId)
 
     const lancamentos = analise.tipo === 'single'
-      ? await processarSingle(buffer, analise)
+      ? await processarSingle(buffer, analise, extractedText)
       : await processarMulti(buffer, analise, extractedText)
 
     await supabaseAdmin
