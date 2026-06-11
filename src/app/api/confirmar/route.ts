@@ -11,6 +11,7 @@ function limparLancamento(raw: LancamentoAI, processamentoId: string) {
     data_entrega: raw.data_entrega ?? null,
     metragem: raw.metragem ?? null,
     tipologia: raw.tipologia ?? null,
+    andar: raw.andar ?? null,
     vagas: raw.vagas ?? null,
     unidades: raw.unidades != null ? Math.round(Number(raw.unidades)) || null : null,
     valor_minimo: raw.valor_minimo != null ? Number(raw.valor_minimo) || null : null,

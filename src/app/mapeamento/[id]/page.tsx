@@ -171,8 +171,20 @@ export default function MapeamentoPage() {
               </Badge>
               <span className="text-sm text-gray-500">{analise.construtora}</span>
               <span className="text-sm text-gray-400">•</span>
-              <span className="text-sm text-gray-500">{lancamentos.length} tipologias detectadas</span>
+              <span className="text-sm text-gray-500">
+                {lancamentos.length} linhas extraídas
+                {analise.tipo === 'multi' && analise.empreendimentos_identificados?.length
+                  ? ` · ~${analise.empreendimentos_identificados.length} empreendimentos no PDF`
+                  : ''}
+              </span>
             </div>
+          )}
+
+          {analise?.tipo === 'multi'
+            && (analise.empreendimentos_identificados?.length ?? 0) > lancamentos.length + 5 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+              A análise identificou mais empreendimentos do que linhas extraídas. Revise a tabela e complemente manualmente o que faltar antes de salvar.
+            </p>
           )}
 
           <div className="flex justify-between items-center mb-4">
@@ -196,6 +208,7 @@ export default function MapeamentoPage() {
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Bairro</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Entrega</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Tipologia</th>
+                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Andar</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Metragem</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Vagas</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Unids.</th>
@@ -208,7 +221,7 @@ export default function MapeamentoPage() {
                     {lancamentos.map((l, i) => (
                       <tr key={i} className="border-b hover:bg-gray-50">
                         <td className="p-2 text-gray-400">{i + 1}</td>
-                        {(['construtora', 'empreendimento', 'bairro', 'data_entrega', 'tipologia', 'metragem', 'vagas'] as const).map(field => (
+                        {(['construtora', 'empreendimento', 'bairro', 'data_entrega', 'tipologia', 'andar', 'metragem', 'vagas'] as const).map(field => (
                           <td key={field} className="p-2">
                             <input
                               type="text"

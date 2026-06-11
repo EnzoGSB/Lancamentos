@@ -11,6 +11,7 @@ const LANCAMENTO_SCHEMA = `{
   "data_entrega": "ex: Maio/2029, 12/2028, Pronto ou null",
   "metragem": "ex: 22-23m², 372,99m², 47-64m² ou null",
   "tipologia": "ex: Studio, 1 dorm, 2 dorms, 2 suítes, 3 suítes, 4 suítes, Duplex, Garden, Loft, NR ou null",
+  "andar": "ex: 5º, 1º-26º, Térreo, Cobertura, 112 ou null — andar/nível/unidade quando a tabela informar",
   "vagas": "ex: 0, 0-1, 2, 4 ou null",
   "unidades": número inteiro ou null,
   "valor_minimo": número sem R$ sem pontos de milhar (ex: 503146) ou null,
@@ -32,9 +33,10 @@ Regras críticas:
 4. Para tabelas com valores por andar (ex: "1º andar R$856.781 ... 26º andar R$985.299"), agrupe por tipologia: valor_minimo=menor valor, valor_maximo=maior valor, unidades=quantidade de andares/unidades listados para aquela tipologia
 5. CAMPO unidades: conte TODAS as unidades da tipologia no documento (andares, aptos ou coluna de quantidade). Se a tabela listar 26 andares para "2 dorms", unidades=26 — não subestime.
 6. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 503146)
-7. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
-8. TEXTO NATIVO: você recebe o texto digital do PDF (nomes, valores e contagens EXATOS, documento inteiro). Use-o para não perder tipologias em páginas posteriores e para confirmar a quantidade de unidades por tipologia.
-9. Se um campo não existe, use null — NÃO invente dados
+7. CAMPO andar: preencha quando a tabela informar andar, nível, pavimento ou número de unidade. Se houver faixa de andares (ex: 1º a 26º), use formato "1º-26º".
+8. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
+9. TEXTO NATIVO: você recebe o texto digital do PDF (nomes, valores e contagens EXATOS, documento inteiro). Use-o para não perder tipologias em páginas posteriores e para confirmar a quantidade de unidades por tipologia.
+10. Se um campo não existe, use null — NÃO invente dados
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -48,16 +50,17 @@ ${LANCAMENTO_SCHEMA}
 Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
 1. CÉLULAS MESCLADAS: as colunas à esquerda (região, bairro e/ou empreendimento) frequentemente usam células mescladas que cobrem várias linhas de dados. Cada linha herda esses valores da célula mesclada imediatamente acima/à esquerda. NÃO propague o nome de um empreendimento para linhas que pertencem a OUTRO empreendimento — o valor muda quando começa um novo bloco.
 2. EXTRAIA TODOS os empreendimentos e TODAS as linhas de dados desta faixa — NÃO descarte nenhum bloco, mesmo que o layout seja incomum. Blocos pequenos no meio ou no fim da faixa também contam — não pare após o primeiro empreendimento.
-3. AGREGUE POR TIPOLOGIA: gere uma linha por (empreendimento + tipologia + metragem). Se houver VÁRIAS unidades da mesma tipologia/metragem (andares ou números de apartamento diferentes, com preços diferentes), CONSOLIDE numa só: valor_minimo = menor preço, valor_maximo = maior preço.
+3. AGREGUE POR TIPOLOGIA somente quando várias linhas VISÍVEIS forem claramente o MESMO empreendimento com a MESMA tipologia e metragem (ex.: andares diferentes, preços diferentes). Se cada linha da tabela representa um empreendimento distinto ou uma combinação única empreendimento+tipologia, produza UMA linha JSON por linha visível — NÃO consolide empreendimentos diferentes.
 4. CAMPO unidades = QUANTIDADE de unidades daquela tipologia, somente se a tabela informar essa quantidade. Se a tabela lista unidades individuais (coluna "Unidade"/"Andar" com número do apartamento, ex: 112, 1009), NÃO use esse número como quantidade — deixe null.
 5. Se esta FAIXA cortou o cabeçalho de região/empreendimento, descubra o bairro pelo ENDEREÇO da linha (a rua indica o bairro) ou pelo TEXTO NATIVO. NUNCA repita cegamente o valor da linha anterior se houver dúvida.
 6. SEMPRE preencha empreendimento, bairro e data_entrega quando a informação existir.
 7. NÃO use o nome da construtora como substituto para empreendimento.
 8. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 1625000).
-9. IGNORE cabeçalhos de coluna, rodapés, notas e texto explicativo — apenas linhas de dados de imóveis.
-10. TEXTO NATIVO: você recebe o TEXTO NATIVO do PDF (nomes e valores EXATOS, mas referente ao DOCUMENTO INTEIRO, fora de ordem). REGRA ABSOLUTA: extraia EXCLUSIVAMENTE as linhas que aparecem VISUALMENTE NESTA FAIXA da imagem. O texto nativo serve APENAS como dicionário para escrever corretamente os NOMES e VALORES das linhas que você VÊ na imagem — NÃO adicione linhas que não estão visíveis nesta faixa. NUNCA invente um nome que não apareça no texto nativo.
-11. CAMPO bairro: normalize como "Bairro, Cidade" (vírgula). Ex: "Vila da Saúde, São Paulo".
-12. CAMPO empreendimento: nome limpo, sem sufixos espúrios ("*", "¹", notas de rodapé).
+9. CAMPO andar: preencha andar/nível/pavimento ou número de unidade quando a tabela informar (ex: "5º", "112", "Térreo"). Se consolidar vários andares da mesma tipologia, use faixa "1º-26º".
+10. IGNORE cabeçalhos de coluna, rodapés, notas e texto explicativo — apenas linhas de dados de imóveis.
+11. TEXTO NATIVO: você recebe o TEXTO NATIVO do PDF (nomes e valores EXATOS, mas referente ao DOCUMENTO INTEIRO, fora de ordem). REGRA ABSOLUTA: extraia EXCLUSIVAMENTE as linhas que aparecem VISUALMENTE NESTA FAIXA da imagem. O texto nativo serve APENAS como dicionário para escrever corretamente os NOMES e VALORES das linhas que você VÊ na imagem — NÃO adicione linhas que não estão visíveis nesta faixa. NUNCA invente um nome que não apareça no texto nativo.
+12. CAMPO bairro: normalize como "Bairro, Cidade" (vírgula). Ex: "Vila da Saúde, São Paulo".
+13. CAMPO empreendimento: nome limpo, sem sufixos espúrios ("*", "¹", notas de rodapé).
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -165,16 +168,21 @@ export async function processarMulti(buffer: Buffer, analise: AnaliseIA, textoNa
   ].filter(Boolean).join('\n')
 
   // Cada página vira N faixas; processa com concorrência limitada para evitar falhas silenciosas.
-  const faixasPorPagina = await Promise.all(paginas.map(png => cortarEmFaixas(png, 3)))
+  // Mais faixas em tabelões densos → menos linhas por chamada, menos risco de truncar/omitir.
+  const numFaixas = (analise.empreendimentos_identificados?.length ?? 0) >= 45 ? 5
+    : (analise.empreendimentos_identificados?.length ?? 0) >= 30 ? 4
+    : 3
+
+  const faixasPorPagina = await Promise.all(paginas.map(png => cortarEmFaixas(png, numFaixas)))
   const todasFaixas = faixasPorPagina.flat()
 
-  const resultados = await mapWithConcurrency(
+  const bruto = (await mapWithConcurrency(
     todasFaixas,
     4,
     faixa => _extrairDeImagem(SYSTEM_PROMPT_MULTI, faixa, contexto, textoNativo)
-  )
+  )).flat()
 
-  return deduplicar(resultados.flat())
+  return deduplicar(bruto)
 }
 
 async function mapWithConcurrency<T, R>(
@@ -222,12 +230,13 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
     const endereco = norm(l.endereco).slice(0, 24)
     const tip = norm(l.tipologia)
     const met = normMetragem(l.metragem)
+    const andar = norm(l.andar)
     // Inclui bairro/endereço para não colapsar empreendimentos distintos quando o nome vem vazio.
     if (!emp) {
       const val = toNum(l.valor_minimo)
-      return `|${bairro}|${endereco}|${tip}|${met}|${val ?? ''}`
+      return `|${bairro}|${endereco}|${tip}|${met}|${andar}|${val ?? ''}`
     }
-    return `${emp}|${bairro}|${tip}|${met}`
+    return `${emp}|${bairro}|${tip}|${met}|${andar}`
   }
 
   const map = new Map<string, LancamentoAI>()
@@ -237,6 +246,17 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
     if (!existing) {
       map.set(k, { ...l })
       continue
+    }
+
+    // Preços distintos = linhas distintas (evita colapsar empreendimentos diferentes com nomes similares).
+    const vExist = toNum(existing.valor_minimo)
+    const vNovo = toNum(l.valor_minimo)
+    if (vExist != null && vNovo != null) {
+      const base = Math.max(vExist, vNovo, 1)
+      if (Math.abs(vExist - vNovo) / base > 0.03) {
+        map.set(`${k}|${vNovo}`, { ...l })
+        continue
+      }
     }
 
     // Consolida a faixa de valores
@@ -343,6 +363,10 @@ async function _extrairDeImagem(
 
       const content = completion.choices[0]?.message?.content
       if (!content) continue
+
+      if (completion.choices[0]?.finish_reason === 'length') {
+        console.error('[extrairDeImagem] resposta truncada (max_tokens) — faixa pode ter linhas omitidas')
+      }
 
       const parsed = JSON.parse(content)
       return (parsed.lancamentos ?? []) as LancamentoAI[]
