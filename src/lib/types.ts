@@ -18,7 +18,6 @@ export type Lancamento = {
   unidade: string | null
   andar: string | null
   vagas: string | null
-  unidades: number | null
   valor_minimo: number | null
   valor_maximo: number | null
   desconto_margem: string | null

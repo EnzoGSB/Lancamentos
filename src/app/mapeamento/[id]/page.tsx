@@ -212,7 +212,6 @@ export default function MapeamentoPage() {
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Andar</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Metragem</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Vagas</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Unids.</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Valor Mín.</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Valor Máx.</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Desconto</th>
@@ -232,14 +231,6 @@ export default function MapeamentoPage() {
                             />
                           </td>
                         ))}
-                        <td className="p-2">
-                          <input
-                            type="number"
-                            value={l.unidades ?? ''}
-                            onChange={e => updateLancamento(i, 'unidades', e.target.value ? Number(e.target.value) : null)}
-                            className="w-16 text-xs border-0 bg-transparent hover:bg-gray-100 focus:bg-white focus:border focus:border-gray-300 rounded px-1 py-0.5 outline-none"
-                          />
-                        </td>
                         <td className="p-2">
                           <input
                             type="number"
