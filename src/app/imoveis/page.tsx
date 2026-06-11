@@ -1,18 +1,21 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Search, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { Lancamento } from '@/lib/types'
 
-type Filtros = {
+type FiltrosMulti = {
+  construtora: string[]
+  empreendimento: string[]
+  bairro: string[]
+  tipologia: string[]
+}
+
+type Filtros = FiltrosMulti & {
   q: string
-  construtora: string
-  empreendimento: string
-  bairro: string
-  tipologia: string
   valor_min: string
   valor_max: string
 }
@@ -27,10 +30,10 @@ type OpcoesFiltro = {
 
 const FILTROS_VAZIOS: Filtros = {
   q: '',
-  construtora: '',
-  empreendimento: '',
-  bairro: '',
-  tipologia: '',
+  construtora: [],
+  empreendimento: [],
+  bairro: [],
+  tipologia: [],
   valor_min: '',
   valor_max: '',
 }
@@ -39,30 +42,83 @@ function formatValor(v: number | null) {
   return v != null ? `R$ ${v.toLocaleString('pt-BR')}` : '—'
 }
 
-function SelectFiltro({
+function MultiSelectFiltro({
   label,
-  value,
+  values,
   options,
   onChange,
 }: {
   label: string
-  value: string
+  values: string[]
   options: string[]
-  onChange: (v: string) => void
+  onChange: (v: string[]) => void
 }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const toggle = (opt: string) => {
+    if (values.includes(opt)) onChange(values.filter(v => v !== opt))
+    else onChange([...values, opt])
+  }
+
+  const resumo =
+    values.length === 0
+      ? 'Todos'
+      : values.length === 1
+        ? values[0]
+        : `${values.length} selecionados`
+
   return (
-    <div className="flex flex-col gap-1 min-w-[140px] flex-1">
+    <div ref={ref} className="relative flex flex-col gap-1 min-w-[160px] flex-1">
       <label className="text-xs font-medium text-gray-500">{label}</label>
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="h-8 w-full rounded-lg border border-input bg-white px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="h-8 w-full rounded-lg border border-input bg-white px-2 text-sm text-left flex items-center justify-between gap-2 outline-none hover:bg-gray-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       >
-        <option value="">Todos</option>
-        {options.map(opt => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
-      </select>
+        <span className="truncate text-gray-900">{resumo}</span>
+        <ChevronDown className={`size-4 shrink-0 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 z-50 mt-1 w-full min-w-[200px] max-h-52 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg p-1">
+          {options.length === 0 ? (
+            <p className="px-2 py-1.5 text-xs text-gray-400">Sem opções</p>
+          ) : (
+            options.map(opt => (
+              <label
+                key={opt}
+                className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={values.includes(opt)}
+                  onChange={() => toggle(opt)}
+                  className="size-3.5 rounded border-gray-300 accent-gray-900"
+                />
+                <span className="truncate" title={opt}>{opt}</span>
+              </label>
+            ))
+          )}
+          {values.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="w-full mt-1 pt-1 border-t border-gray-100 px-2 py-1.5 text-xs text-gray-500 hover:text-gray-900 text-left"
+            >
+              Limpar seleção
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -102,10 +158,10 @@ export default function ImoveisPage() {
     try {
       const params = new URLSearchParams()
       if (filtros.q) params.set('q', filtros.q)
-      if (filtros.construtora) params.set('construtora', filtros.construtora)
-      if (filtros.empreendimento) params.set('empreendimento', filtros.empreendimento)
-      if (filtros.bairro) params.set('bairro', filtros.bairro)
-      if (filtros.tipologia) params.set('tipologia', filtros.tipologia)
+      filtros.construtora.forEach(v => params.append('construtora', v))
+      filtros.empreendimento.forEach(v => params.append('empreendimento', v))
+      filtros.bairro.forEach(v => params.append('bairro', v))
+      filtros.tipologia.forEach(v => params.append('tipologia', v))
       if (filtros.valor_min) params.set('valor_min', filtros.valor_min)
       if (filtros.valor_max) params.set('valor_max', filtros.valor_max)
 
@@ -128,12 +184,25 @@ export default function ImoveisPage() {
   }, [fetchLancamentos])
 
   const empreendimentosFiltrados = useMemo(() => {
-    if (!filtros.construtora) return opcoes.empreendimentos
-    return opcoes.empreendimentosPorConstrutora[filtros.construtora] ?? []
+    if (filtros.construtora.length === 0) return opcoes.empreendimentos
+    const set = new Set<string>()
+    for (const c of filtros.construtora) {
+      for (const e of opcoes.empreendimentosPorConstrutora[c] ?? []) {
+        set.add(e)
+      }
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'))
   }, [filtros.construtora, opcoes.empreendimentos, opcoes.empreendimentosPorConstrutora])
 
   const temFiltrosAtivos = useMemo(
-    () => Object.entries(filtros).some(([, v]) => v !== ''),
+    () =>
+      filtros.q !== ''
+      || filtros.valor_min !== ''
+      || filtros.valor_max !== ''
+      || filtros.construtora.length > 0
+      || filtros.empreendimento.length > 0
+      || filtros.bairro.length > 0
+      || filtros.tipologia.length > 0,
     [filtros]
   )
 
@@ -142,10 +211,20 @@ export default function ImoveisPage() {
     setFiltros(FILTROS_VAZIOS)
   }
 
-  const atualizarFiltro = (campo: keyof Filtros, valor: string) => {
+  const atualizarFiltroMulti = (campo: keyof FiltrosMulti, valores: string[]) => {
     setFiltros(prev => {
-      const next = { ...prev, [campo]: valor }
-      if (campo === 'construtora') next.empreendimento = ''
+      const next = { ...prev, [campo]: valores }
+      if (campo === 'construtora') {
+        const permitidos = new Set<string>()
+        for (const c of valores) {
+          for (const e of opcoes.empreendimentosPorConstrutora[c] ?? []) {
+            permitidos.add(e)
+          }
+        }
+        next.empreendimento = valores.length === 0
+          ? prev.empreendimento
+          : prev.empreendimento.filter(e => permitidos.has(e))
+      }
       return next
     })
   }
@@ -184,29 +263,29 @@ export default function ImoveisPage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <SelectFiltro
+            <MultiSelectFiltro
               label="Construtora"
-              value={filtros.construtora}
+              values={filtros.construtora}
               options={opcoes.construtoras}
-              onChange={v => atualizarFiltro('construtora', v)}
+              onChange={v => atualizarFiltroMulti('construtora', v)}
             />
-            <SelectFiltro
+            <MultiSelectFiltro
               label="Empreendimento"
-              value={filtros.empreendimento}
+              values={filtros.empreendimento}
               options={empreendimentosFiltrados}
-              onChange={v => atualizarFiltro('empreendimento', v)}
+              onChange={v => atualizarFiltroMulti('empreendimento', v)}
             />
-            <SelectFiltro
+            <MultiSelectFiltro
               label="Bairro"
-              value={filtros.bairro}
+              values={filtros.bairro}
               options={opcoes.bairros}
-              onChange={v => atualizarFiltro('bairro', v)}
+              onChange={v => atualizarFiltroMulti('bairro', v)}
             />
-            <SelectFiltro
+            <MultiSelectFiltro
               label="Tipologia"
-              value={filtros.tipologia}
+              values={filtros.tipologia}
               options={opcoes.tipologias}
-              onChange={v => atualizarFiltro('tipologia', v)}
+              onChange={v => atualizarFiltroMulti('tipologia', v)}
             />
             <div className="flex flex-col gap-1 min-w-[120px] flex-1">
               <label className="text-xs font-medium text-gray-500">Valor mín. (R$)</label>
@@ -214,7 +293,7 @@ export default function ImoveisPage() {
                 type="number"
                 placeholder="Ex: 500000"
                 value={filtros.valor_min}
-                onChange={e => atualizarFiltro('valor_min', e.target.value)}
+                onChange={e => setFiltros(prev => ({ ...prev, valor_min: e.target.value }))}
               />
             </div>
             <div className="flex flex-col gap-1 min-w-[120px] flex-1">
@@ -223,7 +302,7 @@ export default function ImoveisPage() {
                 type="number"
                 placeholder="Ex: 2000000"
                 value={filtros.valor_max}
-                onChange={e => atualizarFiltro('valor_max', e.target.value)}
+                onChange={e => setFiltros(prev => ({ ...prev, valor_max: e.target.value }))}
               />
             </div>
           </div>

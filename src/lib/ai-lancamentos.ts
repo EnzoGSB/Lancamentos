@@ -71,19 +71,20 @@ Cada lançamento segue este schema:
 ${LANCAMENTO_SCHEMA}
 
 Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
-1. CÉLULAS MESCLADAS: as colunas à esquerda (região, bairro e/ou empreendimento) frequentemente usam células mescladas que cobrem várias linhas de dados. Cada linha herda esses valores da célula mesclada imediatamente acima/à esquerda. NÃO propague o nome de um empreendimento para linhas que pertencem a OUTRO empreendimento — o valor muda quando começa um novo bloco.
-2. EXTRAIA TODOS os empreendimentos e TODAS as linhas de dados desta faixa — NÃO descarte nenhum bloco, mesmo que o layout seja incomum. Blocos pequenos no meio ou no fim da faixa também contam — não pare após o primeiro empreendimento.
-3. AGREGUE POR TIPOLOGIA somente quando várias linhas VISÍVEIS forem claramente o MESMO empreendimento com a MESMA tipologia e metragem (ex.: andares diferentes, preços diferentes). Se cada linha da tabela representa um empreendimento distinto ou uma combinação única empreendimento+tipologia, produza UMA linha JSON por linha visível — NÃO consolide empreendimentos diferentes.
-4. CAMPO unidade: valor das colunas Unidade, Apto, Ap., Apartamento ou identificador equivalente (ex: 72-T2, 112, 133). Uma linha por unidade/apartamento listado na tabela.
-5. CAMPO andar: APENAS pavimento/nível (ex: 3º, 12º andar, Térreo, Cobertura). Faixa → "1º-26º". Não coloque código de unidade/apartamento aqui.
-6. Se esta FAIXA cortou o cabeçalho de região/empreendimento, descubra o bairro pelo ENDEREÇO da linha (a rua indica o bairro) ou pelo TEXTO NATIVO. NUNCA repita cegamente o valor da linha anterior se houver dúvida.
-7. SEMPRE preencha empreendimento, bairro e data_entrega quando a informação existir.
-8. NÃO use o nome da construtora como substituto para empreendimento.
-9. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 1625000).
-10. IGNORE cabeçalhos de coluna, rodapés, notas e texto explicativo — apenas linhas de dados de imóveis.
-11. TEXTO NATIVO: você recebe o TEXTO NATIVO do PDF (nomes e valores EXATOS, mas referente ao DOCUMENTO INTEIRO, fora de ordem). REGRA ABSOLUTA: extraia EXCLUSIVAMENTE as linhas que aparecem VISUALMENTE NESTA FAIXA da imagem. O texto nativo serve APENAS como dicionário para escrever corretamente os NOMES e VALORES das linhas que você VÊ na imagem — NÃO adicione linhas que não estão visíveis nesta faixa. NUNCA invente um nome que não apareça no texto nativo.
-12. CAMPO bairro: normalize como "Bairro, Cidade" (vírgula). Ex: "Vila da Saúde, São Paulo".
-13. CAMPO empreendimento: nome limpo, sem sufixos espúrios ("*", "¹", notas de rodapé).
+1. CÉLULAS MESCLADAS: região/bairro/empreendimento à esquerda usam células mescladas. Cada LINHA DE DADOS herda o empreendimento e o bairro do bloco ao qual pertence visualmente — NÃO do bloco vizinho acima.
+2. BAIRRO vs EMPREENDIMENTO: o bairro de cada linha é o da MESMA linha/bloco do empreendimento. Se o cabeçalho mesclado diz "Campo Belo" mas a linha é "Aura Moema", o bairro correto é Moema (o nome do empreendimento indica o bairro). NUNCA atribua "Campo Belo" a empreendimentos de outro bairro só por proximidade na tabela.
+3. EXTRAIA TODOS os empreendimentos e TODAS as linhas de dados desta faixa — NÃO descarte nenhum bloco, mesmo que o layout seja incomum. Blocos pequenos no meio ou no fim da faixa também contam — não pare após o primeiro empreendimento.
+4. AGREGUE POR TIPOLOGIA somente quando várias linhas VISÍVEIS forem claramente o MESMO empreendimento com a MESMA tipologia e metragem (ex.: andares diferentes, preços diferentes). Se cada linha da tabela representa um empreendimento distinto ou uma combinação única empreendimento+tipologia, produza UMA linha JSON por linha visível — NÃO consolide empreendimentos diferentes.
+5. CAMPO unidade: valor das colunas Unidade, Apto, Ap., Apartamento ou identificador equivalente (ex: 72-T2, 112, 133). Uma linha por unidade/apartamento listado na tabela.
+6. CAMPO andar: APENAS pavimento/nível (ex: 3º, 12º andar, Térreo, Cobertura). Faixa → "1º-26º". Não coloque código de unidade/apartamento aqui.
+7. Se esta FAIXA cortou o cabeçalho de região/empreendimento, descubra o bairro pelo NOME DO EMPREENDIMENTO, pelo ENDEREÇO da linha ou pelo TEXTO NATIVO — NUNCA repita cegamente o bairro da célula mesclada acima se o empreendimento indicar outro bairro.
+8. SEMPRE preencha empreendimento, bairro e data_entrega quando a informação existir.
+9. NÃO use o nome da construtora como substituto para empreendimento.
+10. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 1625000).
+11. IGNORE cabeçalhos de coluna, rodapés, notas e texto explicativo — apenas linhas de dados de imóveis.
+12. TEXTO NATIVO: você recebe o TEXTO NATIVO do PDF (nomes e valores EXATOS, mas referente ao DOCUMENTO INTEIRO, fora de ordem). REGRA ABSOLUTA: extraia EXCLUSIVAMENTE as linhas que aparecem VISUALMENTE NESTA FAIXA da imagem. O texto nativo serve APENAS como dicionário para escrever corretamente os NOMES e VALORES das linhas que você VÊ na imagem — NÃO adicione linhas que não estão visíveis nesta faixa. NUNCA invente um nome que não apareça no texto nativo.
+13. CAMPO bairro: normalize como "Bairro, Cidade" (vírgula). Ex: "Vila da Saúde, São Paulo". Confira coerência com o nome do empreendimento.
+14. CAMPO empreendimento: nome limpo, sem sufixos espúrios ("*", "¹", notas de rodapé).
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -263,10 +264,8 @@ async function mapWithConcurrency<T, R>(
 // chave em vez de descartar. Preserva a faixa de valores (valor_minimo/maximo) quando há
 // várias linhas da mesma tipologia (ex: Danti) e remove duplicatas de overlap das faixas.
 function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
-  // Normaliza texto: minúsculo, só letras/números (remove pipes, pontuação, espaços).
   const norm = (s: string | null | undefined) =>
     (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
-  // Normaliza metragem para os números principais (robusto a "Garden 167m²" vs "167m²").
   const normMetragem = (s: string | null | undefined) =>
     ((s ?? '').match(/\d+[.,]?\d*/g) ?? []).map(n => n.replace(',', '.')).join('-')
 
@@ -276,20 +275,68 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
     return Number.isFinite(n) ? n : null
   }
 
+  const tokenBairro = (bairro: string | null | undefined) =>
+    norm((bairro ?? '').split(',')[0])
+
+  const scoreBairro = (empreendimento: string, bairro: string | null | undefined) => {
+    const emp = norm(empreendimento)
+    const b = tokenBairro(bairro)
+    if (!emp || !b || b.length < 3) return 0
+    if (emp.includes(b)) return 2
+    return 1
+  }
+
+  const escolherBairro = (empreendimento: string, a: string | null, b: string | null) => {
+    const sa = scoreBairro(empreendimento, a)
+    const sb = scoreBairro(empreendimento, b)
+    if (sa > sb) return a
+    if (sb > sa) return b
+    if ((a?.length ?? 0) >= (b?.length ?? 0)) return a ?? b
+    return b ?? a
+  }
+
+  const precosSimilares = (a: number | null, b: number | null, tol = 0.03) => {
+    if (a == null && b == null) return true
+    if (a == null || b == null) return false
+    const base = Math.max(a, b, 1)
+    return Math.abs(a - b) / base <= tol
+  }
+
   const chave = (l: LancamentoAI) => {
     const emp = norm(l.empreendimento)
-    const bairro = norm(l.bairro)
-    const endereco = norm(l.endereco).slice(0, 24)
     const tip = norm(l.tipologia)
     const met = normMetragem(l.metragem)
     const unidade = norm(l.unidade)
     const andar = norm(l.andar)
-    // Inclui bairro/endereço para não colapsar empreendimentos distintos quando o nome vem vazio.
+    const val = toNum(l.valor_minimo)
+    // Sem empreendimento: mantém bairro/endereço para desambiguar.
     if (!emp) {
-      const val = toNum(l.valor_minimo)
-      return `|${bairro}|${endereco}|${tip}|${met}|${unidade}|${andar}|${val ?? ''}`
+      return `|${norm(l.bairro)}|${norm(l.endereco).slice(0, 24)}|${tip}|${met}|${unidade}|${andar}|${val ?? ''}`
     }
-    return `${emp}|${bairro}|${tip}|${met}|${unidade}|${andar}`
+    // Com empreendimento: IGNORA bairro na chave (evita duplicata por célula mesclada errada).
+    if (unidade) return `${emp}|${tip}|${met}|u:${unidade}|${val ?? ''}`
+    if (andar) return `${emp}|${tip}|${met}|a:${andar}|${val ?? ''}`
+    return `${emp}|${tip}|${met}|${val ?? ''}`
+  }
+
+  const mesclarCampos = (dest: LancamentoAI, src: LancamentoAI) => {
+    const scoreDestAntes = scoreBairro(dest.empreendimento, dest.bairro)
+    const scoreSrcAntes = scoreBairro(dest.empreendimento, src.bairro)
+    dest.bairro = escolherBairro(dest.empreendimento, dest.bairro, src.bairro)
+
+    const mins = [toNum(dest.valor_minimo), toNum(src.valor_minimo)].filter((n): n is number => n != null)
+    const maxs = [toNum(dest.valor_maximo), toNum(src.valor_maximo), ...mins].filter((n): n is number => n != null)
+    if (mins.length) dest.valor_minimo = Math.min(...mins)
+    if (maxs.length) dest.valor_maximo = Math.max(...maxs)
+
+    for (const [campo, valor] of Object.entries(src) as [keyof LancamentoAI, unknown][]) {
+      if (campo === 'valor_minimo' || campo === 'valor_maximo' || campo === 'bairro') continue
+      if ((campo === 'unidade' || campo === 'andar') && scoreSrcAntes < scoreDestAntes) continue
+      const atual = dest[campo]
+      if ((atual == null || atual === '') && valor != null && valor !== '') {
+        ;(dest as Record<string, unknown>)[campo] = valor
+      }
+    }
   }
 
   const map = new Map<string, LancamentoAI>()
@@ -301,33 +348,71 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
       continue
     }
 
-    // Preços distintos = linhas distintas (evita colapsar empreendimentos diferentes com nomes similares).
     const vExist = toNum(existing.valor_minimo)
     const vNovo = toNum(l.valor_minimo)
-    if (vExist != null && vNovo != null) {
-      const base = Math.max(vExist, vNovo, 1)
-      if (Math.abs(vExist - vNovo) / base > 0.03) {
-        map.set(`${k}|${vNovo}`, { ...l })
+    if (vExist != null && vNovo != null && !precosSimilares(vExist, vNovo)) {
+      map.set(`${k}|${vNovo}`, { ...l })
+      continue
+    }
+
+    mesclarCampos(existing, l)
+  }
+
+  // Segunda passagem: funde linhas do mesmo empreendimento+tipologia+metragem com preços iguais
+  // mas chaves diferentes (ex: unidade "32" vs vazio, bairros conflitantes por overlap de faixa).
+  const fundirSemelhantes = (items: LancamentoAI[]): LancamentoAI[] => {
+    const grupos = new Map<string, LancamentoAI[]>()
+    let semEmpIdx = 0
+    for (const l of items) {
+      const emp = norm(l.empreendimento)
+      if (!emp) {
+        grupos.set(`__sem_emp__${semEmpIdx++}`, [l])
         continue
       }
+      const gk = `${emp}|${norm(l.tipologia)}|${normMetragem(l.metragem)}`
+      const arr = grupos.get(gk) ?? []
+      arr.push(l)
+      grupos.set(gk, arr)
     }
 
-    // Consolida a faixa de valores
-    const mins = [toNum(existing.valor_minimo), toNum(l.valor_minimo)].filter((n): n is number => n != null)
-    const maxs = [toNum(existing.valor_maximo), toNum(l.valor_maximo), ...mins].filter((n): n is number => n != null)
-    if (mins.length) existing.valor_minimo = Math.min(...mins)
-    if (maxs.length) existing.valor_maximo = Math.max(...maxs)
+    const resultado: LancamentoAI[] = []
+    for (const grupo of grupos.values()) {
+      if (grupo.length === 1) {
+        resultado.push(grupo[0])
+        continue
+      }
 
-    // Preenche campos que estiverem vazios na entrada existente
-    for (const [campo, valor] of Object.entries(l) as [keyof LancamentoAI, unknown][]) {
-      if (campo === 'valor_minimo' || campo === 'valor_maximo') continue
-      const atual = existing[campo]
-      if ((atual == null || atual === '') && valor != null && valor !== '') {
-        ;(existing as Record<string, unknown>)[campo] = valor
+      const usados = new Set<number>()
+      for (let i = 0; i < grupo.length; i++) {
+        if (usados.has(i)) continue
+        const base = { ...grupo[i] }
+        usados.add(i)
+
+        for (let j = i + 1; j < grupo.length; j++) {
+          if (usados.has(j)) continue
+          const outro = grupo[j]
+          if (!precosSimilares(toNum(base.valor_minimo), toNum(outro.valor_minimo))) continue
+
+          // Mesmo imóvel com bairro errado herdado de célula mesclada vizinha.
+          const bairrosDiferentes = norm(base.bairro) !== norm(outro.bairro)
+          const unidadesCompativeis =
+            !base.unidade || !outro.unidade || norm(base.unidade) === norm(outro.unidade)
+          const andaresCompativeis =
+            !base.andar || !outro.andar || norm(base.andar) === norm(outro.andar)
+
+          if (bairrosDiferentes || (unidadesCompativeis && andaresCompativeis)) {
+            mesclarCampos(base, outro)
+            usados.add(j)
+          }
+        }
+
+        resultado.push(base)
       }
     }
+    return resultado
   }
-  return Array.from(map.values())
+
+  return fundirSemelhantes(Array.from(map.values()))
 }
 
 // Extração a partir do PDF inteiro (visão nativa) — usado no fluxo single

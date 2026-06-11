@@ -5,13 +5,27 @@ function escapeIlike(value: string) {
   return value.replace(/[%_\\]/g, '\\$&')
 }
 
+function parseMulti(searchParams: URLSearchParams, key: string) {
+  return searchParams.getAll(key).map(v => v.trim()).filter(Boolean)
+}
+
+function applyMultiFilter<T extends { eq: (col: string, val: string) => T; in: (col: string, vals: string[]) => T }>(
+  query: T,
+  column: string,
+  values: string[]
+): T {
+  if (values.length === 1) return query.eq(column, values[0])
+  if (values.length > 1) return query.in(column, values)
+  return query
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const q = searchParams.get('q')?.trim()
-  const construtora = searchParams.get('construtora')?.trim()
-  const empreendimento = searchParams.get('empreendimento')?.trim()
-  const bairro = searchParams.get('bairro')?.trim()
-  const tipologia = searchParams.get('tipologia')?.trim()
+  const construtoras = parseMulti(searchParams, 'construtora')
+  const empreendimentos = parseMulti(searchParams, 'empreendimento')
+  const bairros = parseMulti(searchParams, 'bairro')
+  const tipologias = parseMulti(searchParams, 'tipologia')
   const valorMin = searchParams.get('valor_min')
   const valorMax = searchParams.get('valor_max')
   const limit = Math.min(Number(searchParams.get('limit') ?? 500), 1000)
@@ -41,10 +55,10 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  if (construtora) query = query.eq('construtora', construtora)
-  if (empreendimento) query = query.eq('empreendimento', empreendimento)
-  if (bairro) query = query.eq('bairro', bairro)
-  if (tipologia) query = query.eq('tipologia', tipologia)
+  query = applyMultiFilter(query, 'construtora', construtoras)
+  query = applyMultiFilter(query, 'empreendimento', empreendimentos)
+  query = applyMultiFilter(query, 'bairro', bairros)
+  query = applyMultiFilter(query, 'tipologia', tipologias)
 
   const min = valorMin != null && valorMin !== '' ? Number(valorMin) : null
   const max = valorMax != null && valorMax !== '' ? Number(valorMax) : null
