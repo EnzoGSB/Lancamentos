@@ -87,7 +87,9 @@ export default function Dashboard() {
             <CardTitle className="text-sm font-medium text-gray-500">Lançamentos no Banco</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{totalLancamentos ?? '—'}</p>
+            <Link href="/imoveis" className="text-3xl font-bold hover:text-gray-700 transition-colors">
+              {totalLancamentos ?? '—'}
+            </Link>
           </CardContent>
         </Card>
         <Card>

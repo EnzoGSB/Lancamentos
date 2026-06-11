@@ -21,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" className="font-bold text-lg text-gray-900">Tabelões</Link>
             <div className="flex gap-4 text-sm">
               <Link href="/" className="text-gray-600 hover:text-gray-900">Dashboard</Link>
+              <Link href="/imoveis" className="text-gray-600 hover:text-gray-900">Imóveis</Link>
               <Link href="/upload" className="text-gray-600 hover:text-gray-900">Upload</Link>
             </div>
           </div>
