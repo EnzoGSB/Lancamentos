@@ -109,7 +109,7 @@ export default function PreviewPage() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b bg-gray-50">
-                    {['Construtora', 'Empreendimento', 'Bairro', 'Entrega', 'Tipologia', 'Andar', 'Metragem', 'Vagas', 'Unids.', 'Valor Mín.', 'Valor Máx.', 'Desconto'].map(h => (
+                    {['Construtora', 'Empreendimento', 'Bairro', 'Entrega', 'Tipologia', 'Unidade', 'Andar', 'Metragem', 'Vagas', 'Unids.', 'Valor Mín.', 'Valor Máx.', 'Desconto'].map(h => (
                       <th key={h} className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -122,6 +122,7 @@ export default function PreviewPage() {
                       <td className="p-2 whitespace-nowrap">{l.bairro ?? '—'}</td>
                       <td className="p-2 whitespace-nowrap">{l.data_entrega ?? '—'}</td>
                       <td className="p-2 whitespace-nowrap">{l.tipologia ?? '—'}</td>
+                      <td className="p-2 whitespace-nowrap">{l.unidade ?? '—'}</td>
                       <td className="p-2 whitespace-nowrap">{l.andar ?? '—'}</td>
                       <td className="p-2 whitespace-nowrap">{l.metragem ?? '—'}</td>
                       <td className="p-2 whitespace-nowrap text-center">{l.vagas ?? '—'}</td>

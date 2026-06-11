@@ -208,6 +208,7 @@ export default function MapeamentoPage() {
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Bairro</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Entrega</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Tipologia</th>
+                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Unidade</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Andar</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Metragem</th>
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Vagas</th>
@@ -221,7 +222,7 @@ export default function MapeamentoPage() {
                     {lancamentos.map((l, i) => (
                       <tr key={i} className="border-b hover:bg-gray-50">
                         <td className="p-2 text-gray-400">{i + 1}</td>
-                        {(['construtora', 'empreendimento', 'bairro', 'data_entrega', 'tipologia', 'andar', 'metragem', 'vagas'] as const).map(field => (
+                        {(['construtora', 'empreendimento', 'bairro', 'data_entrega', 'tipologia', 'unidade', 'andar', 'metragem', 'vagas'] as const).map(field => (
                           <td key={field} className="p-2">
                             <input
                               type="text"

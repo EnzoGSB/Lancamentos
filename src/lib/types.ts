@@ -15,6 +15,7 @@ export type Lancamento = {
   data_entrega: string | null
   metragem: string | null
   tipologia: string | null
+  unidade: string | null
   andar: string | null
   vagas: string | null
   unidades: number | null
