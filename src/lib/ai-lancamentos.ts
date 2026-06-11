@@ -22,6 +22,14 @@ const LANCAMENTO_SCHEMA = `{
 
 const REGRA_TIPOLOGIA_UNIDADE = `TIPOLOGIA vs UNIDADE: Duplex, Garden, Penthouse, Cobertura, Triplex são modificadores de TIPOLOGIA (ex: "3 suítes Duplex") — NUNCA em unidade. Unidade = apenas número/código do apartamento (ex: "241", "1009", "72-T2" — não "241 Duplex").`
 
+const REGRA_COMPLETUDE = `COMPLETUDE vs INVENÇÃO (prioridade máxima):
+- Analise a tabela com MUITO cuidado: estrutura visual, alinhamento de colunas, células mescladas, blocos por empreendimento e tabelas largas com preço à direita.
+- Para CADA linha de imóvel VISÍVEL, produza UMA linha JSON — mesmo parcial, incompleta ou ambígua.
+- NUNCA omita linhas por incerteza ou dados faltando. Na dúvida, INCLUA a linha e deixe os campos ausentes como null.
+- Campo realmente ausente no documento → null. Vagas = "0" somente quando a tabela indicar zero vagas.
+- NUNCA invente: não chute empreendimento, bairro, tipologia, preço, unidade ou andar que não constem no PDF/texto nativo para aquela linha.
+- TEXTO NATIVO completa campos de linhas JÁ visíveis (ex: preço cortado na faixa). Não crie linhas que não aparecem na imagem desta faixa.`
+
 const SYSTEM_PROMPT_SINGLE = `Você é um especialista em extração de dados de tabelas de vendas imobiliárias brasileiras.
 Você está VENDO o PDF completo de UM empreendimento. Extraia UMA linha por tipologia de imóvel, consolidando os dados de todas as páginas.
 
@@ -29,6 +37,7 @@ Cada lançamento segue este schema:
 ${LANCAMENTO_SCHEMA}
 
 Regras críticas:
+0. ${REGRA_COMPLETUDE}
 1. Uma linha por tipologia ou variante (Studio, 1 dorm, 2 dorms, 2 dorms FINAL 2, 2 suítes, etc.). Variantes distintas (FINAL 1, FINAL 2, metragens diferentes) = linhas separadas na tipologia.
 2. NÃO ignore tipologias com suítes — "2 SUÍTES", "3 SUÍTES" são tão válidas quanto "2 dorms"
 3. IGNORE completamente: KIT CONFORTO, KIT AUTOMAÇÃO, KIT DE ACABAMENTO, KIT BÁSICO e qualquer "kit" — são pacotes adicionais, NÃO são imóveis
@@ -42,8 +51,8 @@ Regras críticas:
 11. CÉLULAS MESCLADAS (entrega): quando entrega aparecer em célula mesclada, repita data_entrega em TODAS as linhas do bloco.
 12. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
 13. TEXTO NATIVO: nomes, valores, entrega, unidade e andar EXATOS. Use para preencher campos faltantes de linhas visíveis.
-14. NÃO crie linha de tipologia sem preço se o texto nativo tiver valor — preencha valor_minimo/valor_maximo.
-15. Se um campo não existe no PDF para aquela linha, use null — NÃO invente dados
+14. Linha visível sem preço na imagem mas com preço no texto nativo → preencha valor_minimo/valor_maximo. Linha visível sem preço em lugar nenhum → inclua a linha com valor_minimo null.
+15. Revise a tabela inteira antes de responder — confira se não pulou nenhuma linha de imóvel no fim, no meio ou em blocos pequenos.
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -55,6 +64,7 @@ Cada lançamento segue este schema:
 ${LANCAMENTO_SCHEMA}
 
 Regras CRÍTICAS:
+0. ${REGRA_COMPLETUDE}
 1. Extraia TODOS os blocos visíveis nesta faixa — NÃO pare no primeiro. Páginas posteriores (ex: 9–14) costumam ter tipologias adicionais (2 DORM - FINAL 1, FINAL 2, etc.) — trate cada bloco como dado de imóvel.
 2. Tabelas com coluna UNIDADES (andares 1º–26º), ÁREA PRIVATIVA, PREÇO DE VENDA e colunas de pagamento (ATO, MENSAIS, FINANCIAMENTO) são tabelas de PREÇO DE UNIDADES — NÃO descarte por parecer "só pagamento". O PREÇO DE VENDA de cada andar é o valor do imóvel.
 3. Variantes distintas (ex: "2 DORM - FINAL 1" vs "2 DORM - FINAL 2", metragens diferentes) = LINHAS SEPARADAS. Inclua o sufixo completo na tipologia (ex: "2 dorms FINAL 2").
@@ -65,12 +75,11 @@ Regras CRÍTICAS:
 8. CAMPO andar: pavimento/nível (3º, 12º andar, 1º-26º). Não confunda com código de apartamento.
 9. valor_minimo e valor_maximo: números puros sem R$, sem pontos de milhar. OBRIGATÓRIO quando o PDF informar preço da linha.
 10. Tabelas largas (ex: Lindenberg): cada linha de tipologia/unidade tem preço em coluna à direita ("Valor Total", "Preço", "R$"). Se a coluna de preço não couber nesta faixa da imagem, localize o valor no TEXTO NATIVO pela mesma tipologia + metragem + unidade/andar.
-11. NÃO deixe linhas com tipologia/metragem sem valor_minimo se o texto nativo tiver o preço correspondente.
+11. Linha visível com tipologia/metragem: busque preço no texto nativo se a coluna estiver cortada. Se não houver preço em lugar nenhum, inclua a linha com valor_minimo null.
 12. CÉLULAS MESCLADAS: data_entrega (ex: Junho/2026) em célula mesclada vale para TODAS as linhas do mesmo bloco — repita em cada linha JSON do bloco.
 13. CAMPO andar: preencha quando houver coluna de andar/pavimento; use TEXTO NATIVO se a coluna estiver fora da faixa.
 14. Resumo de parcelas/condições de pagamento → mais_detalhes (não crie linha extra por parcela).
-15. TEXTO NATIVO: dicionário para nomes, preços, entrega, unidade e andar de linhas visíveis nesta faixa.
-16. Se um campo não existe no PDF para aquela linha, use null — NÃO invente dados.
+15. Antes de responder, varra a faixa de cima a baixo e confira se extraiu TODAS as linhas de imóvel — inclusive blocos pequenos no meio/fim.
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -82,6 +91,7 @@ Cada lançamento segue este schema:
 ${LANCAMENTO_SCHEMA}
 
 Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
+0. ${REGRA_COMPLETUDE}
 1. CÉLULAS MESCLADAS: região/bairro/empreendimento à esquerda usam células mescladas. Cada LINHA DE DADOS herda o empreendimento e o bairro do bloco ao qual pertence visualmente — NÃO do bloco vizinho acima.
 2. BAIRRO vs EMPREENDIMENTO: o bairro de cada linha é o da MESMA linha/bloco do empreendimento. Se o cabeçalho mesclado diz "Campo Belo" mas a linha é "Aura Moema", o bairro correto é Moema (o nome do empreendimento indica o bairro). NUNCA atribua "Campo Belo" a empreendimentos de outro bairro só por proximidade na tabela.
 3. EXTRAIA TODOS os empreendimentos e TODAS as linhas de dados desta faixa — NÃO descarte nenhum bloco, mesmo que o layout seja incomum. Blocos pequenos no meio ou no fim da faixa também contam — não pare após o primeiro empreendimento.
@@ -95,9 +105,10 @@ Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
 11. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 1625000). SEMPRE preencha quando a linha tiver preço — colunas "Valor Total", "Preço", "Preço de Venda", "R$".
 12. Tabelas largas: se a faixa mostrar tipologia/metragem mas a coluna de preço estiver cortada, use o TEXTO NATIVO para preencher valor_minimo/valor_maximo daquela linha.
 13. IGNORE cabeçalhos de coluna, rodapés, notas e texto explicativo — apenas linhas de dados de imóveis.
-14. TEXTO NATIVO: você recebe o TEXTO NATIVO do PDF (nomes e valores EXATOS, mas referente ao DOCUMENTO INTEIRO, fora de ordem). REGRA ABSOLUTA: extraia EXCLUSIVAMENTE as linhas que aparecem VISUALMENTE NESTA FAIXA da imagem. O texto nativo serve como dicionário para NOMES, VALORES e PREÇOS das linhas visíveis — inclusive quando o preço está fora da faixa cortada. NÃO adicione linhas que não estão visíveis nesta faixa. NUNCA invente um nome que não apareça no texto nativo.
+14. Linha visível sem preço na imagem: busque no texto nativo. Se não existir em lugar nenhum, inclua a linha com valor_minimo null — não omita.
 15. CAMPO bairro: normalize como "Bairro, Cidade" (vírgula). Ex: "Vila da Saúde, São Paulo". Confira coerência com o nome do empreendimento.
 16. CAMPO empreendimento: nome limpo, sem sufixos espúrios ("*", "¹", notas de rodapé).
+17. Antes de responder, varra a faixa inteira e confira se extraiu TODAS as linhas de imóvel visíveis — inclusive empreendimentos pequenos no meio/fim da tabela.
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -514,7 +525,7 @@ async function _extrairDePdf(
 ): Promise<LancamentoAI[]> {
   try {
     const blocoTexto = textoNativo
-      ? `\n\nTEXTO NATIVO DO PDF (referência do DOCUMENTO INTEIRO — nomes e valores EXATOS). Use para confirmar tipologias em todas as páginas:\n${textoNativo.substring(0, 40000)}`
+      ? `\n\nTEXTO NATIVO DO PDF (referência do DOCUMENTO INTEIRO — nomes e valores EXATOS). Use para completar campos de linhas visíveis em todas as páginas. Não omita linhas por falta de dado — use null:\n${textoNativo.substring(0, 40000)}`
       : ''
 
     const completion = await openai.chat.completions.create({
@@ -531,7 +542,7 @@ async function _extrairDePdf(
                 file_data: `data:application/pdf;base64,${pdfBase64}`,
               },
             },
-            { type: 'text', text: `${contexto}\n\nExtraia todas as tipologias deste empreendimento, uma por linha.${blocoTexto}` },
+            { type: 'text', text: `${contexto}\n\nAnalise o PDF com cuidado e extraia TODAS as tipologias/linhas de imóvel visíveis — uma por linha. Inclua linhas incompletas (campos ausentes = null). Não pule linhas ambíguas.${blocoTexto}` },
           ],
         },
       ],
@@ -565,7 +576,7 @@ async function _extrairDeImagem(
 ): Promise<LancamentoAI[]> {
   const dataUrl = `data:image/png;base64,${png.toString('base64')}`
   const blocoTexto = textoNativo
-    ? `\n\nTEXTO NATIVO DO PDF (dicionário do DOCUMENTO INTEIRO — nomes e valores EXATOS, fora de ordem). Use para preencher nomes, preços, entrega, unidade e andar das linhas VISÍVEIS nesta faixa. Se colunas estiverem cortadas na imagem (tabela larga), busque no texto nativo. NÃO adicione linhas invisíveis na faixa:\n${textoNativo.substring(0, 40000)}`
+    ? `\n\nTEXTO NATIVO DO PDF (dicionário do DOCUMENTO INTEIRO — nomes e valores EXATOS, fora de ordem). Use para COMPLETAR campos das linhas VISÍVEIS nesta faixa (preço, entrega, unidade, andar cortados na imagem). Não omita linhas visíveis por falta de dado — use null. Não adicione linhas que não aparecem nesta faixa:\n${textoNativo.substring(0, 40000)}`
     : ''
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -578,7 +589,7 @@ async function _extrairDeImagem(
             role: 'user',
             content: [
               { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
-              { type: 'text', text: `${contexto}\n\nEsta imagem é uma FAIXA (recorte horizontal) de uma página. Extraia EXCLUSIVAMENTE as linhas de dados VISÍVEIS nesta faixa, sem pular nenhuma e sem adicionar linhas de fora.${blocoTexto}` },
+              { type: 'text', text: `${contexto}\n\nEsta imagem é uma FAIXA (recorte horizontal) de uma página. Analise a tabela com cuidado. Extraia TODAS as linhas de imóvel VISÍVEIS nesta faixa — inclua linhas incompletas (campos ausentes = null). Não pule linhas ambíguas. Não adicione linhas de fora da faixa.${blocoTexto}` },
             ],
           },
         ],
