@@ -16,6 +16,42 @@ const STATUS_LABEL: Record<string, string> = {
   processando: 'Extraindo dados com IA (gpt-4.1)...',
 }
 
+type EditableField =
+  | 'construtora' | 'empreendimento' | 'bairro' | 'data_entrega' | 'tipologia'
+  | 'unidade' | 'andar' | 'metragem' | 'vagas' | 'desconto_margem'
+  | 'valor_minimo' | 'valor_maximo'
+
+const FIELD_LABELS: Record<EditableField, string> = {
+  construtora: 'Construtora',
+  empreendimento: 'Empreendimento',
+  bairro: 'Bairro',
+  data_entrega: 'Entrega',
+  tipologia: 'Tipologia',
+  unidade: 'Unidade',
+  andar: 'Andar',
+  metragem: 'Metragem',
+  vagas: 'Vagas',
+  valor_minimo: 'Valor Mín.',
+  valor_maximo: 'Valor Máx.',
+  desconto_margem: 'Desconto',
+}
+
+type SelectedCell = { row: number; field: EditableField }
+
+const inputClass = (selected: boolean) =>
+  `w-full min-w-[80px] max-w-[180px] text-xs border-0 rounded px-1 py-0.5 outline-none ${
+    selected
+      ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset'
+      : 'bg-transparent hover:bg-gray-100 focus:bg-white focus:border focus:border-gray-300'
+  }`
+
+const numberInputClass = (selected: boolean) =>
+  `w-24 text-xs border-0 rounded px-1 py-0.5 outline-none ${
+    selected
+      ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset'
+      : 'bg-transparent hover:bg-gray-100 focus:bg-white focus:border focus:border-gray-300'
+  }`
+
 export default function MapeamentoPage() {
   const params = useParams()
   const router = useRouter()
@@ -28,6 +64,7 @@ export default function MapeamentoPage() {
   const [erro, setErro] = useState('')
   const [analise, setAnalise] = useState<AnaliseIA | null>(null)
   const [lancamentos, setLancamentos] = useState<LancamentoAI[]>([])
+  const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
 
   useEffect(() => {
     async function fetchData() {
@@ -123,6 +160,21 @@ export default function MapeamentoPage() {
     setLancamentos(prev => prev.map((l, i) => i === index ? { ...l, [field]: value } : l))
   }, [])
 
+  const selectCell = useCallback((row: number, field: EditableField) => {
+    setSelectedCell({ row, field })
+  }, [])
+
+  const aplicarParaColuna = useCallback(() => {
+    if (!selectedCell) {
+      toast.error('Selecione uma célula antes de aplicar')
+      return
+    }
+    const { row, field } = selectedCell
+    const valor = lancamentos[row]?.[field]
+    setLancamentos(prev => prev.map(l => ({ ...l, [field]: valor })))
+    toast.success(`"${FIELD_LABELS[field]}" aplicado em ${lancamentos.length} linhas`)
+  }, [selectedCell, lancamentos])
+
   if (loading) {
     return <div className="flex items-center justify-center min-h-[50vh]"><p className="text-gray-500">Carregando...</p></div>
   }
@@ -187,10 +239,29 @@ export default function MapeamentoPage() {
             </p>
           )}
 
-          <div className="flex justify-between items-center mb-4">
-            <p className="text-sm text-gray-500">
-              Revise os dados abaixo. Você pode editar qualquer campo antes de salvar.
-            </p>
+          <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm text-gray-500">
+                Revise os dados abaixo. Você pode editar qualquer campo antes de salvar.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={aplicarParaColuna}
+                disabled={!selectedCell}
+                title={selectedCell
+                  ? `Aplicar o valor da linha ${selectedCell.row + 1} (${FIELD_LABELS[selectedCell.field]}) em todas as linhas`
+                  : 'Clique em uma célula e depois aplique para toda a coluna'}
+              >
+                Aplicar para toda a coluna
+              </Button>
+              {selectedCell && (
+                <span className="text-xs text-blue-600">
+                  Selecionado: linha {selectedCell.row + 1}, {FIELD_LABELS[selectedCell.field]}
+                </span>
+              )}
+            </div>
             <Button onClick={handleConfirm} disabled={confirming} size="lg">
               {confirming ? 'Salvando...' : `Confirmar e Salvar ${lancamentos.length} lançamentos`}
             </Button>
@@ -227,7 +298,8 @@ export default function MapeamentoPage() {
                               type="text"
                               value={(l[field] as string) ?? ''}
                               onChange={e => updateLancamento(i, field, e.target.value)}
-                              className="w-full min-w-[80px] max-w-[180px] text-xs border-0 bg-transparent hover:bg-gray-100 focus:bg-white focus:border focus:border-gray-300 rounded px-1 py-0.5 outline-none"
+                              onFocus={() => selectCell(i, field)}
+                              className={inputClass(selectedCell?.row === i && selectedCell?.field === field)}
                             />
                           </td>
                         ))}
@@ -236,7 +308,8 @@ export default function MapeamentoPage() {
                             type="number"
                             value={l.valor_minimo ?? ''}
                             onChange={e => updateLancamento(i, 'valor_minimo', e.target.value ? Number(e.target.value) : null)}
-                            className="w-24 text-xs border-0 bg-transparent hover:bg-gray-100 focus:bg-white focus:border focus:border-gray-300 rounded px-1 py-0.5 outline-none"
+                            onFocus={() => selectCell(i, 'valor_minimo')}
+                            className={numberInputClass(selectedCell?.row === i && selectedCell?.field === 'valor_minimo')}
                           />
                         </td>
                         <td className="p-2">
@@ -244,7 +317,8 @@ export default function MapeamentoPage() {
                             type="number"
                             value={l.valor_maximo ?? ''}
                             onChange={e => updateLancamento(i, 'valor_maximo', e.target.value ? Number(e.target.value) : null)}
-                            className="w-24 text-xs border-0 bg-transparent hover:bg-gray-100 focus:bg-white focus:border focus:border-gray-300 rounded px-1 py-0.5 outline-none"
+                            onFocus={() => selectCell(i, 'valor_maximo')}
+                            className={numberInputClass(selectedCell?.row === i && selectedCell?.field === 'valor_maximo')}
                           />
                         </td>
                         <td className="p-2">
@@ -252,7 +326,8 @@ export default function MapeamentoPage() {
                             type="text"
                             value={(l.desconto_margem as string) ?? ''}
                             onChange={e => updateLancamento(i, 'desconto_margem', e.target.value)}
-                            className="w-20 text-xs border-0 bg-transparent hover:bg-gray-100 focus:bg-white focus:border focus:border-gray-300 rounded px-1 py-0.5 outline-none"
+                            onFocus={() => selectCell(i, 'desconto_margem')}
+                            className={inputClass(selectedCell?.row === i && selectedCell?.field === 'desconto_margem')}
                           />
                         </td>
                       </tr>

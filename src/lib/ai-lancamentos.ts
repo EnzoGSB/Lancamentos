@@ -10,8 +10,8 @@ const LANCAMENTO_SCHEMA = `{
   "bairro": "bairro ou null",
   "data_entrega": "ex: Maio/2029, 12/2028, Pronto ou null",
   "metragem": "ex: 22-23m², 372,99m², 47-64m² ou null",
-  "tipologia": "ex: Studio, 1 dorm, 2 dorms, 2 suítes, 3 suítes, 4 suítes, Duplex, Garden, Loft, NR ou null",
-  "unidade": "ex: 72-T2, 112, Ap. 501 ou null — valor das colunas Unidade, Apto, Ap., Apartamento ou identificador equivalente",
+  "tipologia": "ex: Studio, 1 dorm, 2 dorms, 2 suítes, 3 suítes Duplex, 4 suítes, Garden, Penthouse, Loft, NR — Duplex/Garden/Penthouse são parte da tipologia",
+  "unidade": "ex: 72-T2, 112, 241, Ap. 501 ou null — APENAS código/número do apartamento, SEM Duplex/Garden/Penthouse (isso vai em tipologia)",
   "andar": "ex: 3º, 12º andar, Térreo, Cobertura, 1º-26º ou null — APENAS pavimento/nível (não confundir com código de unidade)",
   "vagas": "ex: 0, 0-1, 2, 4 ou null",
   "valor_minimo": número sem R$ sem pontos de milhar (ex: 503146) ou null,
@@ -19,6 +19,8 @@ const LANCAMENTO_SCHEMA = `{
   "desconto_margem": "ex: 10%, 3% a 22% ou null",
   "mais_detalhes": objeto JSON livre com informações extras ou null
 }`
+
+const REGRA_TIPOLOGIA_UNIDADE = `TIPOLOGIA vs UNIDADE: Duplex, Garden, Penthouse, Cobertura, Triplex são modificadores de TIPOLOGIA (ex: "3 suítes Duplex") — NUNCA em unidade. Unidade = apenas número/código do apartamento (ex: "241", "1009", "72-T2" — não "241 Duplex").`
 
 const SYSTEM_PROMPT_SINGLE = `Você é um especialista em extração de dados de tabelas de vendas imobiliárias brasileiras.
 Você está VENDO o PDF completo de UM empreendimento. Extraia UMA linha por tipologia de imóvel, consolidando os dados de todas as páginas.
@@ -34,15 +36,14 @@ Regras críticas:
 5. Para tabelas com valores por andar (ex: "1º andar R$856.781 ... 26º andar R$985.299"), agrupe por variante: valor_minimo=menor PREÇO DE VENDA, valor_maximo=maior, andar=faixa "1º-26º"
 6. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 503146). SEMPRE preencha quando o PDF informar — colunas comuns: "Valor Total", "Preço", "Preço de Venda", "R$".
 7. Tabelas largas (ex: Lindenberg): tipologia/metragem à esquerda e preço à direita. Se esta faixa mostrar a linha mas não a coluna de preço, busque o valor no TEXTO NATIVO para a mesma tipologia + metragem + unidade/andar.
-8. CAMPO unidade: colunas Unidade/Apto/Ap./Apartamento. Coluna UNIDADES com "1º andar" → use andar, não unidade.
-9. CAMPO andar: pavimento/nível (3º, 12º andar, Térreo, 1º-26º).
-10. CÉLULAS MESCLADAS (entrega, bairro, empreendimento): quando "Entrega", "Junho/2026", "Pronto" etc. aparecer numa célula mesclada que cobre várias linhas, REPITA data_entrega em TODAS as linhas daquele bloco/empreendimento — não deixe só a primeira linha preenchida.
-11. CAMPO unidade: só preencha quando a linha listar apartamento específico (1009, 1011). Linhas de catálogo por tipologia (ex: "Residencial" sem apto) → unidade null.
-12. CAMPO andar: pavimento/nível quando a tabela informar (coluna Andar/Pavimento). Se a coluna não couber na faixa, busque no TEXTO NATIVO.
-13. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
-14. TEXTO NATIVO: nomes, valores, entrega, unidade e andar EXATOS. Use para preencher campos faltantes de linhas visíveis nesta faixa.
-15. NÃO crie linha de tipologia sem preço se o texto nativo tiver valor para aquela combinação — preencha valor_minimo/valor_maximo.
-16. Se um campo não existe no PDF para aquela linha, use null — NÃO invente dados
+8. CAMPO unidade: colunas Unidade/Apto/Ap./Apartamento — só o número/código (241, 1009). Coluna UNIDADES com "1º andar" → use andar, não unidade.
+9. ${REGRA_TIPOLOGIA_UNIDADE}
+10. CAMPO andar: pavimento/nível (3º, 12º andar, Térreo, 1º-26º).
+11. CÉLULAS MESCLADAS (entrega): quando entrega aparecer em célula mesclada, repita data_entrega em TODAS as linhas do bloco.
+12. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
+13. TEXTO NATIVO: nomes, valores, entrega, unidade e andar EXATOS. Use para preencher campos faltantes de linhas visíveis.
+14. NÃO crie linha de tipologia sem preço se o texto nativo tiver valor — preencha valor_minimo/valor_maximo.
+15. Se um campo não existe no PDF para aquela linha, use null — NÃO invente dados
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -59,13 +60,13 @@ Regras CRÍTICAS:
 3. Variantes distintas (ex: "2 DORM - FINAL 1" vs "2 DORM - FINAL 2", metragens diferentes) = LINHAS SEPARADAS. Inclua o sufixo completo na tipologia (ex: "2 dorms FINAL 2").
 4. Bloco com preços por andar: UMA linha por variante — valor_minimo = menor PREÇO DE VENDA da coluna, valor_maximo = maior, andar = faixa "1º-26º" (ou intervalo visível), metragem da coluna ÁREA PRIVATIVA, vagas da coluna VAGAS.
 5. IGNORE KIT CONFORTO, KIT AUTOMAÇÃO, KIT DE ACABAMENTO e qualquer "kit" — não são imóveis.
-6. CAMPO unidade: colunas Unidade/Apto/Ap./Apartamento quando existirem. Coluna UNIDADES com "1º andar", "2º andar" → use andar, não unidade.
-7. CAMPO andar: pavimento/nível (3º, 12º andar, 1º-26º). Não confunda com código de apartamento.
-8. valor_minimo e valor_maximo: números puros sem R$, sem pontos de milhar. OBRIGATÓRIO quando o PDF informar preço da linha.
-9. Tabelas largas (ex: Lindenberg): cada linha de tipologia/unidade tem preço em coluna à direita ("Valor Total", "Preço", "R$"). Se a coluna de preço não couber nesta faixa da imagem, localize o valor no TEXTO NATIVO pela mesma tipologia + metragem + unidade/andar.
-10. NÃO deixe linhas com tipologia/metragem sem valor_minimo se o texto nativo tiver o preço correspondente.
-11. CÉLULAS MESCLADAS: data_entrega (ex: Junho/2026) em célula mesclada vale para TODAS as linhas do mesmo bloco — repita em cada linha JSON do bloco.
-12. CAMPO unidade: apenas para linhas com apartamento identificado (1009, 1011). Linhas só de tipologia/planta → unidade null.
+6. CAMPO unidade: só número/código do apto (241, 1009, 72-T2). Coluna UNIDADES com "1º andar" → use andar.
+7. ${REGRA_TIPOLOGIA_UNIDADE}
+8. CAMPO andar: pavimento/nível (3º, 12º andar, 1º-26º). Não confunda com código de apartamento.
+9. valor_minimo e valor_maximo: números puros sem R$, sem pontos de milhar. OBRIGATÓRIO quando o PDF informar preço da linha.
+10. Tabelas largas (ex: Lindenberg): cada linha de tipologia/unidade tem preço em coluna à direita ("Valor Total", "Preço", "R$"). Se a coluna de preço não couber nesta faixa da imagem, localize o valor no TEXTO NATIVO pela mesma tipologia + metragem + unidade/andar.
+11. NÃO deixe linhas com tipologia/metragem sem valor_minimo se o texto nativo tiver o preço correspondente.
+12. CÉLULAS MESCLADAS: data_entrega (ex: Junho/2026) em célula mesclada vale para TODAS as linhas do mesmo bloco — repita em cada linha JSON do bloco.
 13. CAMPO andar: preencha quando houver coluna de andar/pavimento; use TEXTO NATIVO se a coluna estiver fora da faixa.
 14. Resumo de parcelas/condições de pagamento → mais_detalhes (não crie linha extra por parcela).
 15. TEXTO NATIVO: dicionário para nomes, preços, entrega, unidade e andar de linhas visíveis nesta faixa.
@@ -85,17 +86,18 @@ Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
 2. BAIRRO vs EMPREENDIMENTO: o bairro de cada linha é o da MESMA linha/bloco do empreendimento. Se o cabeçalho mesclado diz "Campo Belo" mas a linha é "Aura Moema", o bairro correto é Moema (o nome do empreendimento indica o bairro). NUNCA atribua "Campo Belo" a empreendimentos de outro bairro só por proximidade na tabela.
 3. EXTRAIA TODOS os empreendimentos e TODAS as linhas de dados desta faixa — NÃO descarte nenhum bloco, mesmo que o layout seja incomum. Blocos pequenos no meio ou no fim da faixa também contam — não pare após o primeiro empreendimento.
 4. AGREGUE POR TIPOLOGIA somente quando várias linhas VISÍVEIS forem claramente o MESMO empreendimento com a MESMA tipologia e metragem (ex.: andares diferentes, preços diferentes). Se cada linha da tabela representa um empreendimento distinto ou uma combinação única empreendimento+tipologia, produza UMA linha JSON por linha visível — NÃO consolide empreendimentos diferentes.
-5. CAMPO unidade: valor das colunas Unidade, Apto, Ap., Apartamento ou identificador equivalente (ex: 72-T2, 112, 133). Uma linha por unidade/apartamento listado na tabela.
-6. CAMPO andar: APENAS pavimento/nível (ex: 3º, 12º andar, Térreo, Cobertura). Faixa → "1º-26º". Não coloque código de unidade/apartamento aqui.
-7. Se esta FAIXA cortou o cabeçalho de região/empreendimento, descubra o bairro pelo NOME DO EMPREENDIMENTO, pelo ENDEREÇO da linha ou pelo TEXTO NATIVO — NUNCA repita cegamente o bairro da célula mesclada acima se o empreendimento indicar outro bairro.
-8. SEMPRE preencha empreendimento, bairro e data_entrega quando a informação existir.
-9. NÃO use o nome da construtora como substituto para empreendimento.
-10. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 1625000). SEMPRE preencha quando a linha tiver preço — colunas "Valor Total", "Preço", "Preço de Venda", "R$".
-11. Tabelas largas: se a faixa mostrar tipologia/metragem mas a coluna de preço estiver cortada, use o TEXTO NATIVO para preencher valor_minimo/valor_maximo daquela linha.
-12. IGNORE cabeçalhos de coluna, rodapés, notas e texto explicativo — apenas linhas de dados de imóveis.
-13. TEXTO NATIVO: você recebe o TEXTO NATIVO do PDF (nomes e valores EXATOS, mas referente ao DOCUMENTO INTEIRO, fora de ordem). REGRA ABSOLUTA: extraia EXCLUSIVAMENTE as linhas que aparecem VISUALMENTE NESTA FAIXA da imagem. O texto nativo serve como dicionário para NOMES, VALORES e PREÇOS das linhas visíveis — inclusive quando o preço está fora da faixa cortada. NÃO adicione linhas que não estão visíveis nesta faixa. NUNCA invente um nome que não apareça no texto nativo.
-14. CAMPO bairro: normalize como "Bairro, Cidade" (vírgula). Ex: "Vila da Saúde, São Paulo". Confira coerência com o nome do empreendimento.
-15. CAMPO empreendimento: nome limpo, sem sufixos espúrios ("*", "¹", notas de rodapé).
+5. CAMPO unidade: só número/código do apto (ex: 72-T2, 112, 241). Uma linha por unidade listada na tabela.
+6. ${REGRA_TIPOLOGIA_UNIDADE}
+7. CAMPO andar: APENAS pavimento/nível (ex: 3º, 12º andar, Térreo, Cobertura). Faixa → "1º-26º". Não coloque código de unidade/apartamento aqui.
+8. Se esta FAIXA cortou o cabeçalho de região/empreendimento, descubra o bairro pelo NOME DO EMPREENDIMENTO, pelo ENDEREÇO da linha ou pelo TEXTO NATIVO — NUNCA repita cegamente o bairro da célula mesclada acima se o empreendimento indicar outro bairro.
+9. SEMPRE preencha empreendimento, bairro e data_entrega quando a informação existir.
+10. NÃO use o nome da construtora como substituto para empreendimento.
+11. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 1625000). SEMPRE preencha quando a linha tiver preço — colunas "Valor Total", "Preço", "Preço de Venda", "R$".
+12. Tabelas largas: se a faixa mostrar tipologia/metragem mas a coluna de preço estiver cortada, use o TEXTO NATIVO para preencher valor_minimo/valor_maximo daquela linha.
+13. IGNORE cabeçalhos de coluna, rodapés, notas e texto explicativo — apenas linhas de dados de imóveis.
+14. TEXTO NATIVO: você recebe o TEXTO NATIVO do PDF (nomes e valores EXATOS, mas referente ao DOCUMENTO INTEIRO, fora de ordem). REGRA ABSOLUTA: extraia EXCLUSIVAMENTE as linhas que aparecem VISUALMENTE NESTA FAIXA da imagem. O texto nativo serve como dicionário para NOMES, VALORES e PREÇOS das linhas visíveis — inclusive quando o preço está fora da faixa cortada. NÃO adicione linhas que não estão visíveis nesta faixa. NUNCA invente um nome que não apareça no texto nativo.
+15. CAMPO bairro: normalize como "Bairro, Cidade" (vírgula). Ex: "Vila da Saúde, São Paulo". Confira coerência com o nome do empreendimento.
+16. CAMPO empreendimento: nome limpo, sem sufixos espúrios ("*", "¹", notas de rodapé).
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -271,10 +273,61 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
+const SUFIXOS_TIPOLOGIA = ['duplex', 'triplex', 'garden', 'penthouse', 'cobertura', 'sobreloja'] as const
+
+function appendTipologia(l: LancamentoAI, extra: string) {
+  const extraNorm = extra.trim()
+  if (!extraNorm) return
+  const tip = (l.tipologia ?? '').trim()
+  if (tip.toLowerCase().includes(extraNorm.toLowerCase())) return
+  l.tipologia = tip ? `${tip} ${extraNorm}` : extraNorm
+}
+
+function capitalizarModificador(s: string) {
+  const lower = s.toLowerCase()
+  if (lower === 'duplex') return 'Duplex'
+  if (lower === 'triplex') return 'Triplex'
+  if (lower === 'penthouse') return 'Penthouse'
+  return lower.charAt(0).toUpperCase() + lower.slice(1)
+}
+
+// Move Duplex/Garden/etc. de unidade para tipologia (ex: "241 Duplex" → unidade "241", tipologia "+ Duplex").
+function normalizarTipologiaUnidade(lancamentos: LancamentoAI[]): LancamentoAI[] {
+  for (const l of lancamentos) {
+    const u = l.unidade?.trim()
+    if (!u) continue
+
+    const uLower = u.toLowerCase()
+
+    if (SUFIXOS_TIPOLOGIA.some(s => uLower === s)) {
+      l.unidade = null
+      appendTipologia(l, capitalizarModificador(uLower))
+      continue
+    }
+
+    const match = u.match(/^([\d]+[\w-]*)\s+(.+)$/i)
+    if (!match) continue
+
+    const codigo = match[1]
+    const sufixo = match[2].trim()
+    const sufixoLower = sufixo.toLowerCase()
+
+    const mods = SUFIXOS_TIPOLOGIA.filter(s => sufixoLower.includes(s))
+    if (mods.length === 0) continue
+
+    l.unidade = codigo
+    for (const mod of mods) {
+      appendTipologia(l, capitalizarModificador(mod))
+    }
+  }
+  return lancamentos
+}
+
 // Consolida por (empreendimento + tipologia + metragem): mescla entradas com a mesma
 // chave em vez de descartar. Preserva a faixa de valores (valor_minimo/maximo) quando há
 // várias linhas da mesma tipologia (ex: Danti) e remove duplicatas de overlap das faixas.
 function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
+  const entrada = normalizarTipologiaUnidade(lancamentos.map(l => ({ ...l })))
   const norm = (s: string | null | undefined) =>
     (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
   const normMetragem = (s: string | null | undefined) =>
@@ -352,7 +405,7 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
   }
 
   const map = new Map<string, LancamentoAI>()
-  for (const l of lancamentos) {
+  for (const l of entrada) {
     const k = chave(l)
     const existing = map.get(k)
     if (!existing) {
