@@ -8,6 +8,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import type { LancamentoAI, AnaliseIA } from '@/lib/types'
+import {
+  FIELD_CELL_CLASS,
+  formatarCampo,
+  normalizarLancamentos,
+} from '@/lib/formatar-lancamento'
+import { cn } from '@/lib/utils'
 
 const STATUS_EM_PROGRESSO = ['extraindo', 'analisando', 'processando']
 
@@ -39,19 +45,23 @@ const FIELD_LABELS: Record<EditableField, string> = {
 
 type SelectedCell = { row: number; field: EditableField }
 
-const inputClass = (selected: boolean) =>
-  `w-full min-w-[80px] max-w-[180px] text-xs border-0 rounded px-1 py-0.5 outline-none ${
+const inputClass = (selected: boolean, field?: EditableField) =>
+  cn(
+    'w-full text-xs border-0 rounded px-1 py-0.5 outline-none',
+    FIELD_CELL_CLASS[field as keyof typeof FIELD_CELL_CLASS] ?? 'min-w-[80px] max-w-[180px]',
     selected
       ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset'
       : 'bg-transparent hover:bg-gray-100 focus:bg-white focus:border focus:border-gray-300'
-  }`
+  )
 
-const numberInputClass = (selected: boolean) =>
-  `w-24 text-xs border-0 rounded px-1 py-0.5 outline-none ${
+const numberInputClass = (selected: boolean, field?: 'valor_minimo' | 'valor_maximo') =>
+  cn(
+    'w-24 text-xs border-0 rounded px-1 py-0.5 outline-none',
+    field ? FIELD_CELL_CLASS[field] : undefined,
     selected
       ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset'
       : 'bg-transparent hover:bg-gray-100 focus:bg-white focus:border focus:border-gray-300'
-  }`
+  )
 
 export default function MapeamentoPage() {
   const params = useParams()
@@ -82,7 +92,7 @@ export default function MapeamentoPage() {
         setErro(data.erro || '')
         if (data.analise_ia) setAnalise(data.analise_ia as AnaliseIA)
         if (data.lancamentos_ai?.lancamentos) {
-          setLancamentos(data.lancamentos_ai.lancamentos as LancamentoAI[])
+          setLancamentos(normalizarLancamentos(data.lancamentos_ai.lancamentos as LancamentoAI[]))
           setUndoStack([])
         }
       } catch {
@@ -103,7 +113,7 @@ export default function MapeamentoPage() {
       setStatus(data.status)
       if (data.analise_ia) setAnalise(data.analise_ia as AnaliseIA)
       if (data.lancamentos_ai?.lancamentos) {
-        setLancamentos(data.lancamentos_ai.lancamentos as LancamentoAI[])
+        setLancamentos(normalizarLancamentos(data.lancamentos_ai.lancamentos as LancamentoAI[]))
         setUndoStack([])
         clearInterval(interval)
       }
@@ -127,7 +137,7 @@ export default function MapeamentoPage() {
       const data = await res.json()
       if (res.ok) {
         setAnalise(data.analise)
-        setLancamentos(data.lancamentos)
+        setLancamentos(normalizarLancamentos(data.lancamentos))
         setUndoStack([])
         setStatus('aguardando_confirmacao')
         toast.success(`${data.lancamentos.length} tipologias extraídas pela IA.`)
@@ -170,9 +180,24 @@ export default function MapeamentoPage() {
     setLancamentos(prev => prev.map((l, i) => i === index ? { ...l, [field]: value } : l))
   }, [])
 
+  const blurCampo = useCallback((index: number, field: EditableField) => {
+    setLancamentos(prev => prev.map((l, i) => {
+      if (i !== index) return l
+      const formatted = formatarCampo(field, l[field])
+      if (formatted === l[field]) return l
+      return { ...l, [field]: formatted }
+    }))
+  }, [])
+
   const selectCell = useCallback((row: number, field: EditableField) => {
     setSelectedCell({ row, field })
   }, [])
+
+  const padronizarTabela = useCallback(() => {
+    setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
+    setLancamentos(prev => normalizarLancamentos(prev))
+    toast.success('Formatação da tabela padronizada')
+  }, [lancamentos])
 
   const desfazer = useCallback(() => {
     setUndoStack(prev => {
@@ -191,7 +216,7 @@ export default function MapeamentoPage() {
       return
     }
     const { row, field } = selectedCell
-    const valor = lancamentos[row]?.[field]
+    const valor = formatarCampo(field, lancamentos[row]?.[field])
     setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
     setLancamentos(prev => prev.map(l => ({ ...l, [field]: valor })))
     toast.success(`"${FIELD_LABELS[field]}" aplicado em ${lancamentos.length} linhas`)
@@ -298,6 +323,15 @@ export default function MapeamentoPage() {
                 type="button"
                 variant="outline"
                 size="sm"
+                onClick={padronizarTabela}
+                title="Padroniza andar, metragem, tipologia e entrega em todas as linhas"
+              >
+                Padronizar formatação
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
                 onClick={desfazer}
                 disabled={undoStack.length === 0}
                 title="Desfazer última aplicação em coluna (Ctrl+Z)"
@@ -346,9 +380,11 @@ export default function MapeamentoPage() {
                             <input
                               type="text"
                               value={(l[field] as string) ?? ''}
+                              title={(l[field] as string) ?? undefined}
                               onChange={e => updateLancamento(i, field, e.target.value)}
                               onFocus={() => selectCell(i, field)}
-                              className={inputClass(selectedCell?.row === i && selectedCell?.field === field)}
+                              onBlur={() => blurCampo(i, field)}
+                              className={inputClass(selectedCell?.row === i && selectedCell?.field === field, field)}
                             />
                           </td>
                         ))}
@@ -358,7 +394,7 @@ export default function MapeamentoPage() {
                             value={l.valor_minimo ?? ''}
                             onChange={e => updateLancamento(i, 'valor_minimo', e.target.value ? Number(e.target.value) : null)}
                             onFocus={() => selectCell(i, 'valor_minimo')}
-                            className={numberInputClass(selectedCell?.row === i && selectedCell?.field === 'valor_minimo')}
+                            className={numberInputClass(selectedCell?.row === i && selectedCell?.field === 'valor_minimo', 'valor_minimo')}
                           />
                         </td>
                         <td className="p-2">
@@ -367,7 +403,7 @@ export default function MapeamentoPage() {
                             value={l.valor_maximo ?? ''}
                             onChange={e => updateLancamento(i, 'valor_maximo', e.target.value ? Number(e.target.value) : null)}
                             onFocus={() => selectCell(i, 'valor_maximo')}
-                            className={numberInputClass(selectedCell?.row === i && selectedCell?.field === 'valor_maximo')}
+                            className={numberInputClass(selectedCell?.row === i && selectedCell?.field === 'valor_maximo', 'valor_maximo')}
                           />
                         </td>
                         <td className="p-2">
@@ -376,7 +412,8 @@ export default function MapeamentoPage() {
                             value={(l.desconto_margem as string) ?? ''}
                             onChange={e => updateLancamento(i, 'desconto_margem', e.target.value)}
                             onFocus={() => selectCell(i, 'desconto_margem')}
-                            className={inputClass(selectedCell?.row === i && selectedCell?.field === 'desconto_margem')}
+                            onBlur={() => blurCampo(i, 'desconto_margem')}
+                            className={inputClass(selectedCell?.row === i && selectedCell?.field === 'desconto_margem', 'desconto_margem')}
                           />
                         </td>
                       </tr>

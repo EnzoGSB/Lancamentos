@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { Lancamento } from '@/lib/types'
+import { exibirCampo } from '@/lib/formatar-lancamento'
 
 type FiltrosMulti = {
   construtora: string[]
@@ -340,11 +341,11 @@ export default function ImoveisPage() {
                       <td className="p-2 whitespace-nowrap font-medium">{l.construtora}</td>
                       <td className="p-2 max-w-[200px] truncate" title={l.empreendimento}>{l.empreendimento}</td>
                       <td className="p-2 whitespace-nowrap">{l.bairro ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap">{l.data_entrega ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap">{l.tipologia ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap">{l.unidade ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap">{l.andar ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap">{l.metragem ?? '—'}</td>
+                      <td className="p-2 whitespace-nowrap tabular-nums">{exibirCampo('data_entrega', l.data_entrega)}</td>
+                      <td className="p-2 whitespace-nowrap">{exibirCampo('tipologia', l.tipologia)}</td>
+                      <td className="p-2 whitespace-nowrap tabular-nums text-center">{l.unidade ?? '—'}</td>
+                      <td className="p-2 whitespace-nowrap tabular-nums">{exibirCampo('andar', l.andar)}</td>
+                      <td className="p-2 whitespace-nowrap tabular-nums text-right">{exibirCampo('metragem', l.metragem)}</td>
                       <td className="p-2 whitespace-nowrap text-center">{l.vagas ?? '—'}</td>
                       <td className="p-2 whitespace-nowrap">{formatValor(l.valor_minimo)}</td>
                       <td className="p-2 whitespace-nowrap">{formatValor(l.valor_maximo)}</td>

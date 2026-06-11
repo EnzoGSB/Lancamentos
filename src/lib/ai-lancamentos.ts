@@ -2,6 +2,7 @@ import sharp from 'sharp'
 import { openai, AI_MODEL_ANALYZER, AI_MODEL_EXTRACTOR } from './openai'
 import { createPDFParser } from './pdf-parse-server'
 import type { AnaliseIA, LancamentoAI } from './types'
+import { normalizarLancamentos } from './formatar-lancamento'
 
 const LANCAMENTO_SCHEMA = `{
   "construtora": "nome da construtora",
@@ -9,10 +10,10 @@ const LANCAMENTO_SCHEMA = `{
   "endereco": "logradouro e número ou null",
   "bairro": "bairro ou null",
   "data_entrega": "ex: Maio/2029, 12/2028, Pronto ou null",
-  "metragem": "ex: 22-23m², 372,99m², 47-64m² ou null",
+  "metragem": "ex: 64,21m², 98,00m², 47,00-64,00m² — sempre vírgula decimal e sufixo m²",
   "tipologia": "ex: Studio, 1 dorm, 2 dorms, 2 suítes, 3 suítes Duplex, 4 suítes, Garden, Penthouse, Loft, NR — Duplex/Garden/Penthouse são parte da tipologia",
   "unidade": "ex: 72-T2, 112, 241, Ap. 501 ou null — APENAS código/número do apartamento, SEM Duplex/Garden/Penthouse (isso vai em tipologia)",
-  "andar": "ex: 3º, 12º andar, Térreo, Cobertura, 1º-26º ou null — APENAS pavimento/nível (não confundir com código de unidade)",
+  "andar": "ex: 3º andar, 12º andar, Térreo, Cobertura, 1º-26º — use sempre 'Nº andar' (não só 'Nº')",
   "vagas": "ex: 0, 0-1, 2, 4 ou null",
   "valor_minimo": número sem R$ sem pontos de milhar (ex: 503146) ou null,
   "valor_maximo": número ou null (null se igual ao mínimo),
@@ -22,13 +23,16 @@ const LANCAMENTO_SCHEMA = `{
 
 const REGRA_TIPOLOGIA_UNIDADE = `TIPOLOGIA vs UNIDADE: Duplex, Garden, Penthouse, Cobertura, Triplex são modificadores de TIPOLOGIA (ex: "3 suítes Duplex") — NUNCA em unidade. Unidade = apenas número/código do apartamento (ex: "241", "1009", "72-T2" — não "241 Duplex").`
 
+const REGRA_TIPOLOGIA_TRUNCADA = `TIPOLOGIA TRUNCADA por coluna estreita/corte de faixa: COMPLETE padrões padronizados do mercado usando TEXTO NATIVO ou dedução óbvia — ex: "2 dorms. (1 suí" → "2 dorms (1 suíte)", "3 suít" → "3 suítes", "Dupl" → "Duplex". Isso é dedução de padrão recorrente em tabelões, não invenção. NÃO complete variantes específicas (FINAL 1, metragem, nome de planta) sem evidência no PDF.`
+
 const REGRA_COMPLETUDE = `COMPLETUDE vs INVENÇÃO (prioridade máxima):
 - Analise a tabela com MUITO cuidado: estrutura visual, alinhamento de colunas, células mescladas, blocos por empreendimento e tabelas largas com preço à direita.
 - Para CADA linha de imóvel VISÍVEL, produza UMA linha JSON — mesmo parcial, incompleta ou ambígua.
 - NUNCA omita linhas por incerteza ou dados faltando. Na dúvida, INCLUA a linha e deixe os campos ausentes como null.
 - Campo realmente ausente no documento → null. Vagas = "0" somente quando a tabela indicar zero vagas.
-- NUNCA invente: não chute empreendimento, bairro, tipologia, preço, unidade ou andar que não constem no PDF/texto nativo para aquela linha.
-- TEXTO NATIVO completa campos de linhas JÁ visíveis (ex: preço cortado na faixa). Não crie linhas que não aparecem na imagem desta faixa.`
+- NUNCA invente: não chute empreendimento, bairro, preço, unidade ou andar que não constem no PDF/texto nativo para aquela linha.
+- TEXTO NATIVO completa campos de linhas JÁ visíveis (ex: preço cortado na faixa). Não crie linhas que não aparecem na imagem desta faixa.
+- ${REGRA_TIPOLOGIA_TRUNCADA}`
 
 const SYSTEM_PROMPT_SINGLE = `Você é um especialista em extração de dados de tabelas de vendas imobiliárias brasileiras.
 Você está VENDO o PDF completo de UM empreendimento. Extraia UMA linha por tipologia de imóvel, consolidando os dados de todas as páginas.
@@ -201,7 +205,7 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoN
   if (paginas.length <= 2) {
     const pdfBase64 = buffer.toString('base64')
     const result = await _extrairDePdf(SYSTEM_PROMPT_SINGLE, pdfBase64, contextoBase, textoNativo)
-    return deduplicar(result)
+    return normalizarLancamentos(deduplicar(result), textoNativo)
   }
 
   const numFaixas = paginas.length >= 10 ? 5 : paginas.length >= 6 ? 4 : 3
@@ -225,7 +229,7 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoN
     }
   )).flat()
 
-  return deduplicar(bruto)
+  return normalizarLancamentos(deduplicar(bruto), textoNativo)
 }
 
 // MULTI: tabelas densas e hierárquicas → renderiza cada página em alta resolução,
@@ -259,7 +263,7 @@ export async function processarMulti(buffer: Buffer, analise: AnaliseIA, textoNa
     faixa => _extrairDeImagem(SYSTEM_PROMPT_MULTI, faixa, contexto, textoNativo)
   )).flat()
 
-  return deduplicar(bruto)
+  return normalizarLancamentos(deduplicar(bruto), textoNativo)
 }
 
 async function mapWithConcurrency<T, R>(

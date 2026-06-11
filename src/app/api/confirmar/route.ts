@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { LancamentoAI } from '@/lib/types'
+import { normalizarLancamento } from '@/lib/formatar-lancamento'
 
 function limparLancamento(raw: LancamentoAI, processamentoId: string) {
+  const l = normalizarLancamento(raw)
   return {
-    construtora: raw.construtora ?? 'Não informada',
-    empreendimento: raw.empreendimento ?? 'Não informado',
-    endereco: raw.endereco ?? null,
-    bairro: raw.bairro ?? null,
-    data_entrega: raw.data_entrega ?? null,
-    metragem: raw.metragem ?? null,
-    tipologia: raw.tipologia ?? null,
-    unidade: raw.unidade ?? null,
-    andar: raw.andar ?? null,
-    vagas: raw.vagas ?? null,
-    valor_minimo: raw.valor_minimo != null ? Number(raw.valor_minimo) || null : null,
-    valor_maximo: raw.valor_maximo != null ? Number(raw.valor_maximo) || null : null,
-    desconto_margem: raw.desconto_margem ?? null,
-    mais_detalhes: raw.mais_detalhes ?? null,
+    construtora: l.construtora ?? 'Não informada',
+    empreendimento: l.empreendimento ?? 'Não informado',
+    endereco: l.endereco ?? null,
+    bairro: l.bairro ?? null,
+    data_entrega: l.data_entrega ?? null,
+    metragem: l.metragem ?? null,
+    tipologia: l.tipologia ?? null,
+    unidade: l.unidade ?? null,
+    andar: l.andar ?? null,
+    vagas: l.vagas ?? null,
+    valor_minimo: l.valor_minimo != null ? Number(l.valor_minimo) || null : null,
+    valor_maximo: l.valor_maximo != null ? Number(l.valor_maximo) || null : null,
+    desconto_margem: l.desconto_margem ?? null,
+    mais_detalhes: l.mais_detalhes ?? null,
     processamento_id: processamentoId,
   }
 }
