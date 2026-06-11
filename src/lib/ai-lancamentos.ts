@@ -27,16 +27,39 @@ Cada lançamento segue este schema:
 ${LANCAMENTO_SCHEMA}
 
 Regras críticas:
-1. Uma linha por tipologia (Studio, 1 dorm, 2 dorms, 2 suítes, 3 suítes, 4 suítes, Duplex, Garden, Loft, NR, etc.)
+1. Uma linha por tipologia ou variante (Studio, 1 dorm, 2 dorms, 2 dorms FINAL 2, 2 suítes, etc.). Variantes distintas (FINAL 1, FINAL 2, metragens diferentes) = linhas separadas na tipologia.
 2. NÃO ignore tipologias com suítes — "2 SUÍTES", "3 SUÍTES" são tão válidas quanto "2 dorms"
 3. IGNORE completamente: KIT CONFORTO, KIT AUTOMAÇÃO, KIT DE ACABAMENTO, KIT BÁSICO e qualquer "kit" — são pacotes adicionais, NÃO são imóveis
-4. Para tabelas com valores por andar (ex: "1º andar R$856.781 ... 26º andar R$985.299"), agrupe por tipologia: valor_minimo=menor valor, valor_maximo=maior valor, andar=faixa "1º-26º"
-5. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 503146)
-6. CAMPO unidade: preencha com o valor das colunas Unidade, Apto, Ap., Apartamento ou identificador similar (ex: 72-T2, 112, Ap. 501). NÃO coloque isso em andar.
-7. CAMPO andar: preencha APENAS pavimento/nível (ex: 3º, 12º andar, Térreo, Cobertura). Faixa de andares → "1º-26º".
-8. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
-9. TEXTO NATIVO: você recebe o texto digital do PDF (nomes e valores EXATOS, documento inteiro). Use-o para não perder tipologias em todas as páginas.
-10. Se um campo não existe, use null — NÃO invente dados
+4. Páginas com tabelas UNIDADES + PREÇO DE VENDA por andar (mesmo com colunas ATO/MENSAIS/FINANCIAMENTO) contêm dados de imóvel — extraia TODAS as tipologias de TODAS as páginas, inclusive páginas 9 em diante.
+5. Para tabelas com valores por andar (ex: "1º andar R$856.781 ... 26º andar R$985.299"), agrupe por variante: valor_minimo=menor PREÇO DE VENDA, valor_maximo=maior, andar=faixa "1º-26º"
+6. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 503146)
+7. CAMPO unidade: colunas Unidade/Apto/Ap./Apartamento. Coluna UNIDADES com "1º andar" → use andar, não unidade.
+8. CAMPO andar: pavimento/nível (3º, 12º andar, Térreo, 1º-26º).
+9. Para tabelas de pagamento (ATO, parcelas, financiamento, juros), coloque um resumo em mais_detalhes
+10. TEXTO NATIVO: nomes e valores EXATOS do documento inteiro. Use para não perder tipologias em nenhuma página.
+11. Se um campo não existe, use null — NÃO invente dados
+
+Responda APENAS com JSON válido, sem markdown:
+{"lancamentos": [...]}`
+
+const SYSTEM_PROMPT_SINGLE_FAIXA = `Você é um especialista em extração de dados de tabelas de vendas imobiliárias brasileiras.
+A imagem é uma FAIXA (recorte horizontal) de uma página de um PDF de UM ÚNICO empreendimento. Leia a tabela visualmente e extraia TODOS os blocos de tipologia visíveis nesta faixa.
+
+Cada lançamento segue este schema:
+${LANCAMENTO_SCHEMA}
+
+Regras CRÍTICAS:
+1. Extraia TODOS os blocos visíveis nesta faixa — NÃO pare no primeiro. Páginas posteriores (ex: 9–14) costumam ter tipologias adicionais (2 DORM - FINAL 1, FINAL 2, etc.) — trate cada bloco como dado de imóvel.
+2. Tabelas com coluna UNIDADES (andares 1º–26º), ÁREA PRIVATIVA, PREÇO DE VENDA e colunas de pagamento (ATO, MENSAIS, FINANCIAMENTO) são tabelas de PREÇO DE UNIDADES — NÃO descarte por parecer "só pagamento". O PREÇO DE VENDA de cada andar é o valor do imóvel.
+3. Variantes distintas (ex: "2 DORM - FINAL 1" vs "2 DORM - FINAL 2", metragens diferentes) = LINHAS SEPARADAS. Inclua o sufixo completo na tipologia (ex: "2 dorms FINAL 2").
+4. Bloco com preços por andar: UMA linha por variante — valor_minimo = menor PREÇO DE VENDA da coluna, valor_maximo = maior, andar = faixa "1º-26º" (ou intervalo visível), metragem da coluna ÁREA PRIVATIVA, vagas da coluna VAGAS.
+5. IGNORE KIT CONFORTO, KIT AUTOMAÇÃO, KIT DE ACABAMENTO e qualquer "kit" — não são imóveis.
+6. CAMPO unidade: colunas Unidade/Apto/Ap./Apartamento quando existirem. Coluna UNIDADES com "1º andar", "2º andar" → use andar, não unidade.
+7. CAMPO andar: pavimento/nível (3º, 12º andar, 1º-26º). Não confunda com código de apartamento.
+8. valor_minimo e valor_maximo: números puros sem R$, sem pontos de milhar.
+9. Resumo de parcelas/condições de pagamento → mais_detalhes (não crie linha extra por parcela).
+10. TEXTO NATIVO: dicionário do documento inteiro para nomes/valores EXATOS. Extraia APENAS blocos VISÍVEIS nesta faixa; use o texto para escrever corretamente tipologia, metragem e preços.
+11. Se um campo não existe, use null — NÃO invente dados.
 
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
@@ -135,11 +158,11 @@ async function cortarEmFaixas(png: Buffer, n = 3, overlapPct = 0.03): Promise<Bu
   return faixas
 }
 
-// SINGLE: poucas tipologias espalhadas em várias páginas → manda o PDF inteiro,
-// o modelo vê tudo e consolida naturalmente (uma linha por tipologia).
+// SINGLE: um empreendimento, tipologias em várias páginas (ex: Metropolitan).
+// PDFs com 3+ páginas → renderiza + tiling (mesma técnica do multi) para não perder
+// páginas densas de preço (ex: 9–14). PDFs curtos → PDF inteiro numa chamada.
 export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoNativo = ''): Promise<LancamentoAI[]> {
-  const pdfBase64 = buffer.toString('base64')
-  const contexto = [
+  const contextoBase = [
     `Construtora: ${analise.construtora}`,
     `Empreendimento: ${analise.empreendimentos_identificados[0] ?? 'identifique no PDF'}`,
     analise.empreendimentos_identificados.length > 1
@@ -147,8 +170,37 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoN
       : null,
     analise.resumo ? `Resumo: ${analise.resumo}` : null,
   ].filter(Boolean).join('\n')
-  const result = await _extrairDePdf(SYSTEM_PROMPT_SINGLE, pdfBase64, contexto, textoNativo)
-  return deduplicar(result)
+
+  const paginas = await renderizarPaginas(buffer)
+
+  if (paginas.length <= 2) {
+    const pdfBase64 = buffer.toString('base64')
+    const result = await _extrairDePdf(SYSTEM_PROMPT_SINGLE, pdfBase64, contextoBase, textoNativo)
+    return deduplicar(result)
+  }
+
+  const numFaixas = paginas.length >= 10 ? 4 : paginas.length >= 6 ? 3 : 2
+  const totalPaginas = paginas.length
+
+  type FaixaJob = { png: Buffer; pagina: number }
+  const faixasPorPagina = await Promise.all(
+    paginas.map(async (png, i) => {
+      const faixas = await cortarEmFaixas(png, numFaixas)
+      return faixas.map(f => ({ png: f, pagina: i + 1 }))
+    })
+  )
+  const jobs: FaixaJob[] = faixasPorPagina.flat()
+
+  const bruto = (await mapWithConcurrency(
+    jobs,
+    4,
+    ({ png, pagina }) => {
+      const contexto = `${contextoBase}\nPágina ${pagina} de ${totalPaginas}. Extraia todos os blocos de tipologia visíveis nesta faixa — inclusive tabelas de PREÇO DE VENDA por andar.`
+      return _extrairDeImagem(SYSTEM_PROMPT_SINGLE_FAIXA, png, contexto, textoNativo)
+    }
+  )).flat()
+
+  return deduplicar(bruto)
 }
 
 // MULTI: tabelas densas e hierárquicas → renderiza cada página em alta resolução,
@@ -316,9 +368,14 @@ async function _extrairDePdf(
     const content = completion.choices[0]?.message?.content
     if (!content) return []
 
+    if (completion.choices[0]?.finish_reason === 'length') {
+      console.error('[extrairDePdf] resposta truncada (max_tokens) — tipologias podem ter sido omitidas')
+    }
+
     const parsed = JSON.parse(content)
     return (parsed.lancamentos ?? []) as LancamentoAI[]
-  } catch {
+  } catch (err) {
+    console.error('[extrairDePdf] falha na extração:', err)
     return []
   }
 }
