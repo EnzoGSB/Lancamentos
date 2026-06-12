@@ -1,6 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Lancamento } from './types'
 import { removerSufixoLixoTipologia } from './formatar-lancamento'
+import {
+  type FiltrosEntrega,
+  matchesFiltroEntrega,
+  padroesEntregaSql,
+  temFiltroEntrega,
+} from './entrega-query'
+
+export { isEntregaPronta, isImovelPronto } from './entrega-query'
 
 export type CondicaoAlternativa = {
   suites_min?: number | null
@@ -25,13 +33,14 @@ export type FiltrosLancamentos = {
   vagas_min?: number | null
   condicoes_or?: CondicaoAlternativa[]
   tipo_imovel?: 'apartamento' | 'studio' | null
-}
+} & FiltrosEntrega
 
 export type OpcoesCatalogo = {
   construtoras: string[]
   empreendimentos: string[]
   bairros: string[]
   tipologias: string[]
+  entregas: string[]
 }
 
 export type ResultadoBusca = {
@@ -230,6 +239,8 @@ function filtrarPosQuery(
     if (filtros.tipo_imovel === 'studio' && !isStudioImovel(l)) return false
     if (filtros.tipo_imovel === 'apartamento' && !isApartamentoImovel(l)) return false
 
+    if (!matchesFiltroEntrega(l.data_entrega, filtros)) return false
+
     return true
   })
 }
@@ -274,6 +285,7 @@ function precisaPosFiltro(filtros: FiltrosLancamentos): boolean {
     || (filtros.condicoes_or?.length ?? 0) > 0
     || (filtros.termos?.length ?? 0) > 0
     || filtros.tipo_imovel != null
+    || temFiltroEntrega(filtros)
 }
 
 async function executarQuerySql(
@@ -309,6 +321,7 @@ async function executarQuerySql(
         `endereco.ilike.%${t}%`,
         `metragem.ilike.%${t}%`,
         `desconto_margem.ilike.%${t}%`,
+        `data_entrega.ilike.%${t}%`,
       )
     }
     query = query.or(orParts.join(','))
@@ -324,6 +337,13 @@ async function executarQuerySql(
   }
   if (filtros.valor_max != null && Number.isFinite(filtros.valor_max)) {
     query = query.lte('valor_minimo', filtros.valor_max)
+  }
+
+  const padroesEntrega = padroesEntregaSql(filtros)
+  if (padroesEntrega.length === 1) {
+    query = query.ilike('data_entrega', padroesEntrega[0])
+  } else if (padroesEntrega.length > 1) {
+    query = query.or(padroesEntrega.map(p => `data_entrega.ilike.${p}`).join(','))
   }
 
   const { data, error } = await query
@@ -402,7 +422,7 @@ export async function buscarLancamentos(
 export async function carregarOpcoesCatalogo(supabase: SupabaseClient): Promise<OpcoesCatalogo> {
   const { data, error } = await supabase
     .from('lancamentos')
-    .select('construtora, empreendimento, bairro, tipologia')
+    .select('construtora, empreendimento, bairro, tipologia, data_entrega')
 
   if (error) throw new Error(error.message)
 
@@ -416,5 +436,6 @@ export async function carregarOpcoesCatalogo(supabase: SupabaseClient): Promise<
     empreendimentos: unique(rows.map(r => r.empreendimento)),
     bairros: unique(rows.map(r => r.bairro)),
     tipologias: unique(rows.map(r => r.tipologia)),
+    entregas: unique(rows.map(r => r.data_entrega)),
   }
 }

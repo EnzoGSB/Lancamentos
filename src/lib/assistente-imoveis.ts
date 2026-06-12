@@ -1,6 +1,11 @@
 import { getOpenAIBusca, AI_MODEL_ASSISTENTE } from './openai-busca'
 import type { CondicaoAlternativa, FiltrosLancamentos, OpcoesCatalogo } from './lancamentos-query'
 import { extrairDormitorios, extrairSuites } from './lancamentos-query'
+import {
+  extrairEntregaDaMensagem,
+  limparFiltrosEntrega,
+  mesclarFiltrosEntrega,
+} from './entrega-query'
 import type { Lancamento } from './types'
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
@@ -141,7 +146,52 @@ function limparFiltros(raw: Record<string, unknown>): FiltrosInterpretados {
     }
   }
 
+  if (raw.entrega_pronta === true) {
+    filtros.entrega_pronta = true
+  }
+
+  Object.assign(filtros, limparFiltrosEntrega(raw))
+
   return filtros
+}
+
+function aplicarHeuristicas(message: string, filtros: FiltrosInterpretados): FiltrosInterpretados {
+  const entregaHeuristica = extrairEntregaDaMensagem(message)
+  let next: FiltrosInterpretados = { ...filtros, ...mesclarFiltrosEntrega(filtros, entregaHeuristica) }
+
+  if (entregaHeuristica.entrega_pronta) {
+    if (next.q) {
+      const qLimpa = next.q
+        .replace(/\blançamentos?\s+prontos?\b/gi, '')
+        .replace(/\bimóveis?\s+prontos?\b/gi, '')
+        .replace(/\bprontos?\s+para\s+morar\b/gi, '')
+        .replace(/\bprontos?\b/gi, '')
+        .trim()
+      if (qLimpa) next.q = qLimpa
+      else delete next.q
+    }
+
+    if (next.termos?.length) {
+      const termos = next.termos.filter(t => !/^prontos?$/i.test(t.trim()))
+      if (termos.length) next.termos = termos
+      else delete next.termos
+    }
+  }
+
+  if (entregaHeuristica.entrega_mes != null || entregaHeuristica.entrega_ano != null
+    || entregaHeuristica.entrega_ate_ano != null || entregaHeuristica.entrega_de_ano != null) {
+    if (next.q) {
+      let qLimpa = next.q
+        .replace(/\bentrega\s+(?:em|para|até|ate|a\s+partir\s+de)\s+[^,]+/gi, '')
+        .replace(/\bate\s+(?:entrega\s+)?(?:de\s+)?[a-z]{3,9}[/.-]\d{2,4}/gi, '')
+        .replace(/\b(?:em|para)\s+\d{4}\b/gi, '')
+        .trim()
+      if (qLimpa) next.q = qLimpa
+      else delete next.q
+    }
+  }
+
+  return next
 }
 
 function resumirOpcoes(opcoes: OpcoesCatalogo) {
@@ -153,6 +203,7 @@ function resumirOpcoes(opcoes: OpcoesCatalogo) {
     bairros: slice(opcoes.bairros),
     tipologias: slice(opcoes.tipologias, 25),
     empreendimentos: slice(opcoes.empreendimentos, 30),
+    entregas: slice(opcoes.entregas, 20),
   }
 }
 
@@ -208,6 +259,17 @@ Para características como "duplex", "studio", "cobertura", use termos: ["duplex
 ## Bairro e catálogo
 Use nomes do catálogo fornecido quando possível. Casamento aproximado é permitido.
 
+## Entrega / imóvel pronto / datas de entrega
+No catálogo, data_entrega usa formatos como "Pronto", "Mai/2027", "Out/2028", "06/2026".
+
+- "pronto", "prontos", "prontos para morar", "entrega imediata", "lançamentos prontos" → **entrega_pronta: true**
+- "entrega em 2027" / "entregue em 2027" → **entrega_ano: 2027** (qualquer mês daquele ano)
+- "entrega em maio/2027" / "Mai/2027" → **entrega_mes: 5, entrega_ano: 2027** (meses: jan=1 … dez=12)
+- "entrega até maio/2027" / "até 2028" → **entrega_ate_mes** e **entrega_ate_ano** (inclui "Pronto" como entrega mais cedo)
+- "a partir de 2028" / "após out/2027" → **entrega_de_mes** e **entrega_de_ano**
+- Para casar texto literal do catálogo, use **entrega_contem**: ["Mai/2027"]
+- Não confunda com empreendimento cujo nome contém "lançamento" — use os campos de entrega para status/data.
+
 ## Resposta ao usuário
 Campo "resposta": 1-2 frases em português explicando o que foi buscado. Se aplicou interpretação de OR ou metragem, mencione brevemente. Não invente resultados — só descreva os critérios.
 
@@ -229,6 +291,14 @@ Campo "resposta": 1-2 frases em português explicando o que foi buscado. Se apli
     "suites_min": null,
     "vagas_min": null,
     "tipo_imovel": null,
+    "entrega_pronta": null,
+    "entrega_mes": null,
+    "entrega_ano": null,
+    "entrega_ate_mes": null,
+    "entrega_ate_ano": null,
+    "entrega_de_mes": null,
+    "entrega_de_ano": null,
+    "entrega_contem": null,
     "condicoes_or": null
   }
 }`
@@ -273,6 +343,6 @@ export async function interpretarBusca(
 
   return {
     resposta,
-    filtros: limparFiltros(parsed.filtros ?? {}),
+    filtros: aplicarHeuristicas(message, limparFiltros(parsed.filtros ?? {})),
   }
 }
