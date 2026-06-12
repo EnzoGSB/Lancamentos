@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { matchesFiltrosTipologiaDormitorio } from '@/lib/tipologia-filtro'
 
 function escapeIlike(value: string) {
   return value.replace(/[%_\\]/g, '\\$&')
@@ -26,19 +27,27 @@ export async function GET(request: NextRequest) {
   const empreendimentos = parseMulti(searchParams, 'empreendimento')
   const bairros = parseMulti(searchParams, 'bairro')
   const tipologias = parseMulti(searchParams, 'tipologia')
+  const tipos = parseMulti(searchParams, 'tipo')
+  const dormitorios = parseMulti(searchParams, 'dormitorio')
   const entregas = parseMulti(searchParams, 'entrega')
   const valorMin = searchParams.get('valor_min')
   const valorMax = searchParams.get('valor_max')
   const limit = Math.min(Number(searchParams.get('limit') ?? 500), 1000)
   const offset = Math.max(Number(searchParams.get('offset') ?? 0), 0)
+  const posFiltroTipologia = tipos.length > 0 || dormitorios.length > 0
 
   let query = supabaseAdmin
     .from('lancamentos')
-    .select('*', { count: 'exact' })
+    .select('*', { count: posFiltroTipologia ? undefined : 'exact' })
     .order('construtora')
     .order('empreendimento')
     .order('tipologia')
-    .range(offset, offset + limit - 1)
+
+  if (posFiltroTipologia) {
+    query = query.range(0, 9999)
+  } else {
+    query = query.range(offset, offset + limit - 1)
+  }
 
   if (q) {
     const term = escapeIlike(q)
@@ -76,8 +85,19 @@ export async function GET(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  let lancamentos = data ?? []
+
+  if (posFiltroTipologia) {
+    lancamentos = lancamentos.filter(l =>
+      matchesFiltrosTipologiaDormitorio(l.tipologia, tipos, dormitorios)
+    )
+    const total = lancamentos.length
+    lancamentos = lancamentos.slice(offset, offset + limit)
+    return NextResponse.json({ lancamentos, total, limit, offset })
+  }
+
   return NextResponse.json({
-    lancamentos: data ?? [],
+    lancamentos,
     total: count ?? 0,
     limit,
     offset,

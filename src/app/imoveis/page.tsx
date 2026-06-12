@@ -17,7 +17,8 @@ type FiltrosMulti = {
   construtora: string[]
   empreendimento: string[]
   bairro: string[]
-  tipologia: string[]
+  tipo: string[]
+  dormitorio: string[]
   entrega: string[]
 }
 
@@ -32,7 +33,8 @@ type OpcoesFiltro = {
   empreendimentos: string[]
   empreendimentosPorConstrutora: Record<string, string[]>
   bairros: string[]
-  tipologias: string[]
+  tipos: string[]
+  dormitorios: string[]
   entregas: string[]
 }
 
@@ -41,7 +43,8 @@ const FILTROS_VAZIOS: Filtros = {
   construtora: [],
   empreendimento: [],
   bairro: [],
-  tipologia: [],
+  tipo: [],
+  dormitorio: [],
   entrega: [],
   valor_min: '',
   valor_max: '',
@@ -229,7 +232,8 @@ export default function ImoveisPage() {
     empreendimentos: [],
     empreendimentosPorConstrutora: {},
     bairros: [],
-    tipologias: [],
+    tipos: [],
+    dormitorios: [],
     entregas: [],
   })
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
@@ -270,7 +274,8 @@ export default function ImoveisPage() {
       filtros.construtora.forEach(v => params.append('construtora', v))
       filtros.empreendimento.forEach(v => params.append('empreendimento', v))
       filtros.bairro.forEach(v => params.append('bairro', v))
-      filtros.tipologia.forEach(v => params.append('tipologia', v))
+      filtros.tipo.forEach(v => params.append('tipo', v))
+      filtros.dormitorio.forEach(v => params.append('dormitorio', v))
       filtros.entrega.forEach(v => params.append('entrega', v))
       if (filtros.valor_min) params.set('valor_min', filtros.valor_min)
       if (filtros.valor_max) params.set('valor_max', filtros.valor_max)
@@ -312,7 +317,8 @@ export default function ImoveisPage() {
       || filtros.construtora.length > 0
       || filtros.empreendimento.length > 0
       || filtros.bairro.length > 0
-      || filtros.tipologia.length > 0
+      || filtros.tipo.length > 0
+      || filtros.dormitorio.length > 0
       || filtros.entrega.length > 0,
     [filtros]
   )
@@ -397,9 +403,15 @@ export default function ImoveisPage() {
             />
             <MultiSelectFiltro
               label="Tipologia"
-              values={filtros.tipologia}
-              options={opcoes.tipologias}
-              onChange={v => atualizarFiltroMulti('tipologia', v)}
+              values={filtros.tipo}
+              options={opcoes.tipos}
+              onChange={v => atualizarFiltroMulti('tipo', v)}
+            />
+            <MultiSelectFiltro
+              label="Dormitórios"
+              values={filtros.dormitorio}
+              options={opcoes.dormitorios}
+              onChange={v => atualizarFiltroMulti('dormitorio', v)}
             />
             <MultiSelectFiltro
               label="Entrega"

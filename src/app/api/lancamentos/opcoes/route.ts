@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { formatarDataEntrega } from '@/lib/formatar-lancamento'
 import { chaveEntrega, parseDataEntrega } from '@/lib/entrega-query'
+import { buildOpcoesDormitorios, buildOpcoesTipos } from '@/lib/tipologia-filtro'
 
 function uniqueSorted(values: (string | null | undefined)[]) {
   return [...new Set(values.filter((v): v is string => Boolean(v?.trim())))]
@@ -48,12 +49,16 @@ export async function GET() {
     empreendimentosPorConstrutora[key].sort((a, b) => a.localeCompare(b, 'pt-BR'))
   }
 
+  const tipologiaRows = rows.map(r => r.tipologia)
+
   return NextResponse.json({
     construtoras: uniqueSorted(rows.map(r => r.construtora)),
     empreendimentos: uniqueSorted(rows.map(r => r.empreendimento)),
     empreendimentosPorConstrutora,
     bairros: uniqueSorted(rows.map(r => r.bairro)),
-    tipologias: uniqueSorted(rows.map(r => r.tipologia)),
+    tipologias: uniqueSorted(tipologiaRows),
+    tipos: buildOpcoesTipos(tipologiaRows),
+    dormitorios: buildOpcoesDormitorios(tipologiaRows),
     entregas: sortEntregas(
       rows.map(r => formatarDataEntrega(r.data_entrega) ?? r.data_entrega?.trim() ?? null)
     ),
