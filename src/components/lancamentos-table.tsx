@@ -8,7 +8,7 @@ function formatValor(v: number | null) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
 }
 
-const TH = 'text-left p-1.5 font-medium text-gray-500 leading-tight align-bottom'
+const TH = 'text-left p-1.5 font-medium text-gray-500 leading-tight align-bottom whitespace-normal'
 const TD = 'p-1.5 align-top leading-snug'
 const TD_WRAP = cn(TD, 'break-words [overflow-wrap:anywhere]')
 const TD_NUM = cn(TD, 'tabular-nums whitespace-nowrap')
@@ -22,34 +22,34 @@ export function LancamentosTable({ lancamentos, showPdf = true }: LancamentosTab
   return (
     <table className="w-full table-fixed text-xs">
       <colgroup>
+        <col style={{ width: '8%' }} />
+        <col style={{ width: showPdf ? '13%' : '16%' }} />
+        <col style={{ width: '9%' }} />
         <col style={{ width: '7%' }} />
-        <col style={{ width: showPdf ? '14%' : '18%' }} />
-        <col style={{ width: '10%' }} />
-        <col style={{ width: '6%' }} />
         <col style={{ width: '12%' }} />
         <col style={{ width: '5%' }} />
         <col style={{ width: '5%' }} />
-        <col style={{ width: '6%' }} />
         <col style={{ width: '5%' }} />
-        <col style={{ width: '9%' }} />
-        <col style={{ width: '9%' }} />
-        <col style={{ width: showPdf ? '6%' : '8%' }} />
+        <col style={{ width: '5%' }} />
+        <col style={{ width: '8%' }} />
+        <col style={{ width: '8%' }} />
+        <col style={{ width: showPdf ? '7%' : '9%' }} />
         {showPdf && <col style={{ width: '6%' }} />}
       </colgroup>
       <thead>
         <tr className="border-b bg-gray-50">
-          <th className={TH} title="Construtora">Constr.</th>
-          <th className={TH} title="Empreendimento">Empreed.</th>
-          <th className={TH} title="Bairro">Bairro</th>
-          <th className={TH} title="Entrega">Entrega</th>
-          <th className={TH} title="Tipologia">Tipol.</th>
-          <th className={TH} title="Unidade">Unid.</th>
-          <th className={TH} title="Andar">Andar</th>
-          <th className={TH} title="Metragem">m²</th>
-          <th className={TH} title="Vagas">Vagas</th>
-          <th className={TH} title="Valor mínimo">Mín.</th>
-          <th className={TH} title="Valor máximo">Máx.</th>
-          <th className={TH} title="Desconto">Desc.</th>
+          <th className={TH}>Construtora</th>
+          <th className={TH}>Empreendimento</th>
+          <th className={TH}>Bairro</th>
+          <th className={TH}>Entrega</th>
+          <th className={TH}>Tipologia</th>
+          <th className={TH}>Unidade</th>
+          <th className={TH}>Andar</th>
+          <th className={TH}>m²</th>
+          <th className={TH}>Vagas</th>
+          <th className={TH}>Mínimo</th>
+          <th className={TH}>Máximo</th>
+          <th className={TH}>Desconto</th>
           {showPdf && <th className={TH}>PDF</th>}
         </tr>
       </thead>

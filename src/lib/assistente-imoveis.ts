@@ -105,10 +105,16 @@ function limparFiltros(raw: Record<string, unknown>): FiltrosInterpretados {
   const empreendimento = arr(raw.empreendimento)
   const bairro = arr(raw.bairro)
   const tipologia = arr(raw.tipologia)
+  const unidade = arr(raw.unidade)
+  const andar = arr(raw.andar)
+  const descontoContem = arr(raw.desconto_contem)
   if (construtora) filtros.construtora = construtora
   if (empreendimento) filtros.empreendimento = empreendimento
   if (bairro) filtros.bairro = bairro
   if (tipologia) filtros.tipologia = tipologia
+  if (unidade) filtros.unidade = unidade
+  if (andar) filtros.andar = andar
+  if (descontoContem) filtros.desconto_contem = descontoContem
 
   const valorMin = num(raw.valor_min)
   const valorMax = num(raw.valor_max)
@@ -204,12 +210,17 @@ function resumirOpcoes(opcoes: OpcoesCatalogo) {
     tipologias: slice(opcoes.tipologias, 25),
     empreendimentos: slice(opcoes.empreendimentos, 30),
     entregas: slice(opcoes.entregas, 20),
+    descontos: slice(opcoes.descontos, 15),
   }
 }
 
 const SYSTEM_PROMPT = `Você é uma IA de busca imobiliária. Sua função é interpretar pedidos em linguagem natural e retornar filtros estruturados para consulta na base REAL de imóveis cadastrados.
 
 NUNCA invente imóveis, valores, metragens, bairros ou empreendimentos. Trabalhe apenas com critérios derivados do pedido do usuário.
+
+## Campos do catálogo (colunas da tabela)
+Cada imóvel tem: construtora, empreendimento, bairro, data_entrega (entrega), tipologia, unidade, andar, metragem (m²), vagas, valor_minimo (preço mínimo), valor_maximo (preço máximo), desconto_margem (desconto).
+Use os filtros JSON abaixo mapeados a esses campos. A busca genérica (q/termos) também percorre todos eles.
 
 ## Objetivo
 Entenda a intenção, identifique filtros explícitos e implícitos, aplique margem inteligente quando indicado e traduza em JSON para busca no banco.
@@ -249,12 +260,19 @@ Quando critérios forem obrigatórios juntos (sem "ou"), use os campos diretos (
 - duplex → termos: ["duplex"] ou exige_duplex: true
 
 ## Busca por referência parcial
-Para características como "duplex", "studio", "cobertura", use termos: ["duplex"] — o sistema busca em tipologia, empreendimento, unidade, descrição e demais campos.
+Para características como "duplex", "studio", "cobertura", use termos: ["duplex"] — o sistema busca em tipologia, empreendimento, unidade, andar, desconto e demais campos.
 
-## Filtros numéricos de valor
-- "até 600 mil" → valor_max: 600000
+## Unidade, andar e desconto
+- "unidade 241", "apto 501" → unidade: ["241"] ou ["501"]
+- "12º andar", "cobertura", "térreo" → andar: ["12"] ou termos: ["cobertura"]
+- Se o imóvel não tiver andar cadastrado, a busca **infere o andar pelo código da unidade** (ex.: 124/121 → 12º; 21/23 → 2º; 1201 → 12º). Só usa inferência quando andar está vazio.
+- "com desconto", "desconto 10%" → desconto_contem: ["10%"] ou termos: ["desconto"]
+
+## Filtros numéricos de valor (valor_minimo / valor_maximo)
+- "até 600 mil" → valor_max: 600000 (imóvel cuja faixa de preço inclui valores até esse teto)
 - "até 2 milhões" ou "até 2M" → valor_max: 2000000
-- "a partir de X" → valor_min
+- "a partir de 1 milhão" → valor_min: 1000000
+- "entre 500 mil e 800 mil" → valor_min: 500000, valor_max: 800000
 
 ## Bairro e catálogo
 Use nomes do catálogo fornecido quando possível. Casamento aproximado é permitido.
@@ -283,6 +301,9 @@ Campo "resposta": 1-2 frases em português explicando o que foi buscado. Se apli
     "empreendimento": [],
     "bairro": [],
     "tipologia": [],
+    "unidade": [],
+    "andar": [],
+    "desconto_contem": [],
     "valor_min": null,
     "valor_max": null,
     "metragem_min": null,

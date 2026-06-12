@@ -2,6 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Lancamento } from './types'
 import { removerSufixoLixoTipologia } from './formatar-lancamento'
 import {
+  matchesFiltroAndar,
+  padroesAndarSqlOr,
+} from './andar-unidade'
+import {
   type FiltrosEntrega,
   matchesFiltroEntrega,
   padroesEntregaSql,
@@ -24,6 +28,9 @@ export type FiltrosLancamentos = {
   empreendimento?: string[]
   bairro?: string[]
   tipologia?: string[]
+  unidade?: string[]
+  andar?: string[]
+  desconto_contem?: string[]
   valor_min?: number | null
   valor_max?: number | null
   metragem_min?: number | null
@@ -41,6 +48,7 @@ export type OpcoesCatalogo = {
   bairros: string[]
   tipologias: string[]
   entregas: string[]
+  descontos: string[]
 }
 
 export type ResultadoBusca = {
@@ -200,6 +208,42 @@ function matchesCondicaoOr(l: Lancamento, cond: CondicaoAlternativa): boolean {
   return hasCriterion
 }
 
+function applyIlikeMultiFilter<T extends { ilike: (col: string, val: string) => T; or: (expr: string) => T }>(
+  query: T,
+  column: string,
+  values: string[] | undefined
+): T {
+  if (!values?.length) return query
+  if (values.length === 1) return query.ilike(column, `%${escapeIlike(values[0])}%`)
+  return query.or(values.map(v => `${column}.ilike.%${escapeIlike(v)}%`).join(','))
+}
+
+function faixaValorImovel(l: Lancamento): { min: number; max: number } | null {
+  const min = l.valor_minimo
+  const max = l.valor_maximo ?? l.valor_minimo
+  if (min == null && max == null) return null
+  return { min: min ?? max!, max: max ?? min! }
+}
+
+function matchesValor(
+  l: Lancamento,
+  min: number | null | undefined,
+  max: number | null | undefined
+): boolean {
+  if (min == null && max == null) return true
+  const faixa = faixaValorImovel(l)
+  if (!faixa) return false
+  if (max != null && faixa.min > max) return false
+  if (min != null && faixa.max < min) return false
+  return true
+}
+
+function matchesCampoParcial(val: string | null | undefined, termos: string[] | undefined): boolean {
+  if (!termos?.length) return true
+  const lower = (val ?? '').toLowerCase()
+  return termos.some(t => lower.includes(t.toLowerCase()))
+}
+
 function matchesTermos(l: Lancamento, termos: string[] | undefined): boolean {
   if (!termos?.length) return true
   const texto = textoCompletoImovel(l)
@@ -235,6 +279,11 @@ function filtrarPosQuery(
     }
 
     if (!matchesTermos(l, filtros.termos)) return false
+
+    if (!matchesValor(l, filtros.valor_min, filtros.valor_max)) return false
+    if (!matchesCampoParcial(l.unidade, filtros.unidade)) return false
+    if (!matchesFiltroAndar(l, filtros.andar)) return false
+    if (!matchesCampoParcial(l.desconto_margem, filtros.desconto_contem)) return false
 
     if (filtros.tipo_imovel === 'studio' && !isStudioImovel(l)) return false
     if (filtros.tipo_imovel === 'apartamento' && !isApartamentoImovel(l)) return false
@@ -286,6 +335,11 @@ function precisaPosFiltro(filtros: FiltrosLancamentos): boolean {
     || (filtros.termos?.length ?? 0) > 0
     || filtros.tipo_imovel != null
     || temFiltroEntrega(filtros)
+    || filtros.valor_min != null
+    || filtros.valor_max != null
+    || (filtros.unidade?.length ?? 0) > 0
+    || (filtros.andar?.length ?? 0) > 0
+    || (filtros.desconto_contem?.length ?? 0) > 0
 }
 
 async function executarQuerySql(
@@ -331,9 +385,14 @@ async function executarQuerySql(
   query = applyMultiFilter(query, 'empreendimento', filtros.empreendimento)
   query = applyMultiFilter(query, 'bairro', filtros.bairro)
   query = applyMultiFilter(query, 'tipologia', filtros.tipologia)
+  query = applyIlikeMultiFilter(query, 'unidade', filtros.unidade)
+  if (filtros.andar?.length) {
+    query = query.or(padroesAndarSqlOr(filtros.andar).join(','))
+  }
+  query = applyIlikeMultiFilter(query, 'desconto_margem', filtros.desconto_contem)
 
   if (filtros.valor_min != null && Number.isFinite(filtros.valor_min)) {
-    query = query.gte('valor_minimo', filtros.valor_min)
+    query = query.or(`valor_minimo.gte.${filtros.valor_min},valor_maximo.gte.${filtros.valor_min}`)
   }
   if (filtros.valor_max != null && Number.isFinite(filtros.valor_max)) {
     query = query.lte('valor_minimo', filtros.valor_max)
@@ -422,7 +481,7 @@ export async function buscarLancamentos(
 export async function carregarOpcoesCatalogo(supabase: SupabaseClient): Promise<OpcoesCatalogo> {
   const { data, error } = await supabase
     .from('lancamentos')
-    .select('construtora, empreendimento, bairro, tipologia, data_entrega')
+    .select('construtora, empreendimento, bairro, tipologia, data_entrega, desconto_margem')
 
   if (error) throw new Error(error.message)
 
@@ -437,5 +496,6 @@ export async function carregarOpcoesCatalogo(supabase: SupabaseClient): Promise<
     bairros: unique(rows.map(r => r.bairro)),
     tipologias: unique(rows.map(r => r.tipologia)),
     entregas: unique(rows.map(r => r.data_entrega)),
+    descontos: unique(rows.map(r => r.desconto_margem)),
   }
 }

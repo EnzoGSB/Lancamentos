@@ -369,18 +369,18 @@ export default function MapeamentoPage() {
                   <thead>
                     <tr className="border-b bg-gray-50">
                       <th className="text-left p-1 font-medium text-gray-500 leading-tight">#</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Construtora">Constr.</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Empreendimento">Empreed.</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Bairro">Bairro</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Entrega">Entrega</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Tipologia">Tipol.</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Unidade">Unid.</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Andar">Andar</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Metragem">m²</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Vagas">Vagas</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Valor mínimo">Mín.</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Valor máximo">Máx.</th>
-                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Desconto">Desc.</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Construtora</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Empreendimento</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Bairro</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Entrega</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Tipologia</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Unidade</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Andar</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">m²</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Vagas</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Mínimo</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Máximo</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Desconto</th>
                     </tr>
                   </thead>
                   <tbody>
