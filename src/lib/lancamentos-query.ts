@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Lancamento } from './types'
+import { removerSufixoLixoTipologia } from './formatar-lancamento'
 
 export type CondicaoAlternativa = {
   suites_min?: number | null
@@ -99,22 +100,24 @@ export function parseMetragemM2(val: string | null | undefined): { min: number |
 
 export function extrairSuites(tipologia: string | null | undefined): number | null {
   if (!tipologia) return null
-  const m = tipologia.match(/(\d+)\s*suítes?/i)
+  const tip = removerSufixoLixoTipologia(tipologia)
+  const m = tip.match(/(\d+)\s*suítes?/i)
   return m ? parseInt(m[1], 10) : null
 }
 
 export function extrairDormitorios(tipologia: string | null | undefined): number | null {
   if (!tipologia) return null
-  const m = tipologia.match(/(\d+)\s*dorms?/i) ?? tipologia.match(/(\d+)\s*dorm\.?/i)
+  const tip = removerSufixoLixoTipologia(tipologia)
+  const m = tip.match(/(\d+)\s*dorms?/i) ?? tip.match(/(\d+)\s*dorm\.?/i)
   if (m) return parseInt(m[1], 10)
-  const quartos = tipologia.match(/(\d+)\s*quartos?/i)
+  const quartos = tip.match(/(\d+)\s*quartos?/i)
   if (quartos) return parseInt(quartos[1], 10)
   return null
 }
 
 /** Studio: tipologia explícita ou 0–1 dormitório/quarto. */
 export function isStudioImovel(l: Lancamento): boolean {
-  const tip = (l.tipologia ?? '').trim()
+  const tip = removerSufixoLixoTipologia(l.tipologia ?? '').trim()
   if (/^studio\b/i.test(tip)) return true
   const d = extrairDormitorios(tip)
   return d != null && d <= 1
@@ -123,9 +126,9 @@ export function isStudioImovel(l: Lancamento): boolean {
 /** Apartamento: 2+ dormitórios; exclui studios. Tipologias sem contagem mas claramente multi-quarto contam. */
 export function isApartamentoImovel(l: Lancamento): boolean {
   if (isStudioImovel(l)) return false
-  const d = extrairDormitorios(l.tipologia)
+  const tip = removerSufixoLixoTipologia(l.tipologia ?? '')
+  const d = extrairDormitorios(tip)
   if (d != null && d >= 2) return true
-  const tip = l.tipologia ?? ''
   if (tip && /\d+\s*suítes?|duplex|triplex|cobertura|penthouse|garden|loft/i.test(tip)) return true
   return false
 }

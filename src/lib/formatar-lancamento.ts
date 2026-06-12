@@ -11,6 +11,41 @@ function palavraSuite(quantidade: number) {
   return quantidade === 1 ? 'suíte' : 'suítes'
 }
 
+/**
+ * Detecta sufixo colado na extração de tabelas largas (vagas, metragem, torre, posição).
+ * Ex.: "3 suítes 2 48 - T1 R" → sufixo "2 48 - T1 R"
+ */
+function isSufixoColunaExtra(suffix: string): boolean {
+  const s = suffix.trim()
+  if (!s || s.startsWith('(')) return false
+  return /^(\d+\s+)+\d*(\s*-\s*)?(?:T\d+\s*)?[A-Z]?$/i.test(s)
+    || /^\d+\s+\d+\s*[A-Z]?$/i.test(s)
+}
+
+/** Remove colunas extras coladas na tipologia após extração de PDF. */
+export function removerSufixoLixoTipologia(val: string): string {
+  const s = val.trim().replace(/\s+/g, ' ')
+
+  const padroesCore = [
+    /^((?:Studio|Duplex|Triplex|Garden|Penthouse|Cobertura|Loft)\s+\d+\s*suítes?)(?:\s+(.*))?$/i,
+    /^(\d+\s*dorms?\s*\([^)]+\))(?:\s+(.*))?$/i,
+    /^(\d+\s*dorms?)(?:\s+(.*))?$/i,
+    /^(\d+\s*suítes?)(?:\s+(.*))?$/i,
+    /^(Studio)(?:\s+(.*))?$/i,
+  ]
+
+  for (const re of padroesCore) {
+    const m = s.match(re)
+    if (!m) continue
+    const core = m[1]
+    const rest = m[2]
+    if (rest && isSufixoColunaExtra(rest)) return core
+    return s
+  }
+
+  return s
+}
+
 /** Truncamentos padronizados em tabelões — dedução segura, não invenção arbitrária. */
 export function completarTipologiaTruncada(val: string): string {
   let s = val.trim().replace(/\s+/g, ' ')
@@ -111,8 +146,9 @@ export function resolverTipologia(
   textoNativo = ''
 ): string | null {
   if (!val?.trim()) return null
-  const doTexto = buscarTipologiaNoTextoNativo(val, textoNativo)
-  const base = doTexto ?? completarTipologiaTruncada(val)
+  const limpa = removerSufixoLixoTipologia(val)
+  const doTexto = buscarTipologiaNoTextoNativo(limpa, textoNativo)
+  const base = doTexto ?? completarTipologiaTruncada(limpa)
   return formatarTipologiaInterno(base)
 }
 
@@ -197,7 +233,7 @@ function formatarTipologiaInterno(val: string): string {
 
 export function formatarTipologia(val: string | null | undefined): string | null {
   if (!val?.trim()) return null
-  return formatarTipologiaInterno(completarTipologiaTruncada(val))
+  return formatarTipologiaInterno(completarTipologiaTruncada(removerSufixoLixoTipologia(val)))
 }
 
 export function formatarDataEntrega(val: string | null | undefined): string | null {
