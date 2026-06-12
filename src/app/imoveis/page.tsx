@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { Lancamento } from '@/lib/types'
 import { exibirCampo } from '@/lib/formatar-lancamento'
+import { VerPdfButton } from '@/components/ver-pdf-button'
 
 type FiltrosMulti = {
   construtora: string[]
@@ -339,7 +340,7 @@ export default function ImoveisPage() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b bg-gray-50">
-                    {['Construtora', 'Empreendimento', 'Bairro', 'Entrega', 'Tipologia', 'Unidade', 'Andar', 'Metragem', 'Vagas', 'Valor Mín.', 'Valor Máx.', 'Desconto'].map(h => (
+                    {['Construtora', 'Empreendimento', 'Bairro', 'Entrega', 'Tipologia', 'Unidade', 'Andar', 'Metragem', 'Vagas', 'Valor Mín.', 'Valor Máx.', 'Desconto', 'PDF'].map(h => (
                       <th key={h} className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -359,6 +360,9 @@ export default function ImoveisPage() {
                       <td className="p-2 whitespace-nowrap">{formatValor(l.valor_minimo)}</td>
                       <td className="p-2 whitespace-nowrap">{formatValor(l.valor_maximo)}</td>
                       <td className="p-2 whitespace-nowrap">{l.desconto_margem ?? '—'}</td>
+                      <td className="p-2 whitespace-nowrap">
+                        <VerPdfButton processamentoId={l.processamento_id} size="xs" />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

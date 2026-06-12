@@ -25,6 +25,7 @@ export type ImovelResumo = {
   vagas: string | null
   valor: number | null
   entrega: string | null
+  processamento_id: string | null
 }
 
 export function lancamentoParaResumo(l: Lancamento): ImovelResumo {
@@ -41,6 +42,7 @@ export function lancamentoParaResumo(l: Lancamento): ImovelResumo {
     vagas: l.vagas,
     valor: l.valor_minimo ?? l.valor_maximo,
     entrega: l.data_entrega,
+    processamento_id: l.processamento_id,
   }
 }
 

@@ -5,6 +5,7 @@ import { Loader2, Send, Sparkles } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { VerPdfButton } from '@/components/ver-pdf-button'
 import type { ImovelResumo } from '@/lib/assistente-imoveis'
 
 type ChatMessage = {
@@ -43,6 +44,9 @@ function ImovelCard({ imovel }: { imovel: ImovelResumo }) {
       <p className="text-sm font-semibold text-gray-900 mt-2 tabular-nums">
         {formatValor(imovel.valor)}
       </p>
+      <div className="mt-2">
+        <VerPdfButton processamentoId={imovel.processamento_id} size="xs" />
+      </div>
     </div>
   )
 }
