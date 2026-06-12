@@ -1,10 +1,12 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import { ArrowUp, Building2, Loader2, MapPin, Sparkles } from 'lucide-react'
+import { Loader2, Send, Sparkles } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { VerPdfButton } from '@/components/ver-pdf-button'
 import type { ImovelResumo } from '@/lib/assistente-imoveis'
-import { cn } from '@/lib/utils'
 
 type ChatMessage = {
   id: string
@@ -14,26 +16,10 @@ type ChatMessage = {
 }
 
 const EXEMPLOS = [
-  {
-    label: 'Apartamento na Vila Mariana',
-    query: 'Apartamento na Vila Mariana com 3 quartos até 2 milhões',
-    icon: MapPin,
-  },
-  {
-    label: 'Studio em Moema',
-    query: 'Studio em Moema com 1 vaga',
-    icon: Building2,
-  },
-  {
-    label: 'Imóveis Cyrela',
-    query: 'Imóveis da Cyrela com 2 suítes',
-    icon: Sparkles,
-  },
-  {
-    label: 'Prontos para morar',
-    query: 'Lançamentos prontos para morar até 1,5M',
-    icon: Building2,
-  },
+  'Apartamento na Vila Mariana com 3 quartos até 2 milhões',
+  'Studio em Moema com 1 vaga',
+  'Imóveis da Cyrela com 2 suítes',
+  'Lançamentos prontos para morar até 1,5M',
 ]
 
 function formatValor(v: number | null) {
@@ -42,34 +28,25 @@ function formatValor(v: number | null) {
 
 function ImovelCard({ imovel }: { imovel: ImovelResumo }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 text-sm shadow-sm hover:border-gray-300 transition-colors">
-      <p className="font-medium text-[15px] text-gray-900 leading-snug">{imovel.titulo}</p>
-      <p className="text-[13px] text-gray-500 mt-1">
+    <div className="rounded-lg border bg-white p-3 text-sm shadow-sm">
+      <p className="font-medium text-gray-900 leading-snug">{imovel.titulo}</p>
+      <p className="text-xs text-gray-500 mt-1">
         {imovel.construtora}
         {imovel.bairro ? ` · ${imovel.bairro}` : ''}
       </p>
-      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2.5 text-[13px] text-gray-600">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-gray-600">
         {imovel.metragem && <span>{imovel.metragem}</span>}
         {imovel.dormitorios != null && <span>{imovel.dormitorios} dorms</span>}
         {imovel.suites != null && <span>{imovel.suites} suíte{imovel.suites === 1 ? '' : 's'}</span>}
         {imovel.vagas && <span>{imovel.vagas} vaga{imovel.vagas === '1' ? '' : 's'}</span>}
         {imovel.entrega && <span>Entrega {imovel.entrega}</span>}
       </div>
-      <p className="text-[15px] font-semibold text-gray-900 mt-2.5 tabular-nums">
+      <p className="text-sm font-semibold text-gray-900 mt-2 tabular-nums">
         {formatValor(imovel.valor)}
       </p>
-      <div className="mt-2.5">
+      <div className="mt-2">
         <VerPdfButton processamentoId={imovel.processamento_id} size="xs" />
       </div>
-    </div>
-  )
-}
-
-function TypingIndicator() {
-  return (
-    <div className="flex items-center gap-2 text-[15px] text-gray-500 py-2">
-      <Loader2 className="size-4 animate-spin shrink-0" />
-      <span>Buscando imóveis...</span>
     </div>
   )
 }
@@ -79,7 +56,6 @@ export default function AssistenteImoveisPage() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
@@ -133,132 +109,99 @@ export default function AssistenteImoveisPage() {
     }
   }, [loading, messages, scrollToBottom])
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      enviar(input)
-    }
-  }
-
-  const isEmpty = messages.length === 0 && !loading
-  const canSend = input.trim().length > 0 && !loading
-
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto">
-        {isEmpty ? (
-          <div className="flex flex-col items-center justify-center min-h-full px-4 pb-32">
-            <h1 className="text-[28px] sm:text-[32px] font-normal text-gray-800 text-center tracking-tight">
-              O que você procura hoje?
-            </h1>
-          </div>
-        ) : (
-          <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-            {messages.map(msg => (
-              <div key={msg.id} className="w-full">
-                {msg.role === 'user' ? (
-                  <div className="flex justify-end">
-                    <div className="max-w-[85%] rounded-[1.25rem] bg-[#f4f4f4] px-4 py-2.5 text-[15px] text-gray-900 leading-relaxed">
-                      {msg.content}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <p className="text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap">
-                      {msg.content}
-                    </p>
-                    {msg.imoveis && msg.imoveis.length > 0 && (
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {msg.imoveis.map(imovel => (
-                          <ImovelCard key={imovel.id} imovel={imovel} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-            {loading && <TypingIndicator />}
-            <div ref={bottomRef} />
-          </div>
-        )}
+    <div className="max-w-3xl mx-auto">
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Sparkles className="size-5 text-blue-600" />
+          <h1 className="text-2xl font-bold text-gray-900">Assistente de Imóveis</h1>
+        </div>
+        <p className="text-sm text-gray-500">
+          Descreva o que procura em linguagem natural. A IA interpreta e busca no catálogo extraído dos PDFs.
+        </p>
       </div>
 
-      <div className="shrink-0 bg-gradient-to-t from-white via-white to-white/80 px-4 pb-4 pt-2">
-        <div className="max-w-3xl mx-auto">
-          <form
-            onSubmit={e => {
-              e.preventDefault()
-              enviar(input)
-            }}
-          >
-            <div
-              className={cn(
-                'flex items-end gap-2 rounded-[1.75rem] border bg-white px-4 py-3 shadow-[0_0_0_1px_rgba(0,0,0,0.03),0_2px_8px_rgba(0,0,0,0.06)]',
-                'focus-within:border-gray-300 transition-colors'
-              )}
-            >
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Pergunte alguma coisa"
-                disabled={loading}
-                rows={1}
-                className={cn(
-                  'flex-1 resize-none bg-transparent text-[15px] text-gray-900 placeholder:text-gray-400',
-                  'outline-none min-h-[24px] max-h-[120px] py-0.5 leading-relaxed'
-                )}
-              />
-              <button
-                type="submit"
-                disabled={!canSend}
-                aria-label="Enviar"
-                className={cn(
-                  'shrink-0 flex items-center justify-center size-8 rounded-full transition-colors',
-                  canSend
-                    ? 'bg-gray-900 text-white hover:bg-gray-800'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                )}
-              >
-                {loading ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <ArrowUp className="size-4 stroke-[2.5]" />
-                )}
-              </button>
-            </div>
-          </form>
-
-          {isEmpty && (
-            <div className="flex flex-wrap justify-center gap-2 mt-4">
-              {EXEMPLOS.map(ex => {
-                const Icon = ex.icon
-                return (
+      <Card className="mb-4">
+        <CardContent className="p-4 min-h-[420px] max-h-[60vh] overflow-y-auto flex flex-col gap-4">
+          {messages.length === 0 && (
+            <div className="flex-1 flex flex-col items-center justify-center text-center py-8">
+              <p className="text-gray-500 text-sm mb-4">Experimente uma destas buscas:</p>
+              <div className="flex flex-wrap gap-2 justify-center max-w-lg">
+                {EXEMPLOS.map(ex => (
                   <button
-                    key={ex.query}
+                    key={ex}
                     type="button"
-                    onClick={() => enviar(ex.query)}
-                    className={cn(
-                      'inline-flex items-center gap-2 px-4 py-2 rounded-full',
-                      'border border-gray-200 bg-white text-[13px] text-gray-700',
-                      'hover:bg-gray-50 transition-colors shadow-sm'
-                    )}
+                    onClick={() => enviar(ex)}
+                    className="text-xs px-3 py-2 rounded-full border bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
                   >
-                    <Icon className="size-3.5 text-gray-500" />
-                    {ex.label}
+                    {ex}
                   </button>
-                )
-              })}
+                ))}
+              </div>
             </div>
           )}
 
-          <p className="text-[11px] text-gray-400 text-center mt-3">
-            Assistente usa gpt-4o-mini · resultados do catálogo salvo no banco
-          </p>
-        </div>
-      </div>
+          {messages.map(msg => (
+            <div
+              key={msg.id}
+              className={msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
+            >
+              <div
+                className={
+                  msg.role === 'user'
+                    ? 'max-w-[85%] rounded-2xl rounded-br-md bg-gray-900 text-white px-4 py-2.5 text-sm'
+                    : 'max-w-[95%] w-full space-y-3'
+                }
+              >
+                {msg.role === 'assistant' && (
+                  <p className="text-sm text-gray-700 bg-gray-100 rounded-2xl rounded-bl-md px-4 py-2.5">
+                    {msg.content}
+                  </p>
+                )}
+                {msg.role === 'user' && msg.content}
+                {msg.imoveis && msg.imoveis.length > 0 && (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {msg.imoveis.map(imovel => (
+                      <ImovelCard key={imovel.id} imovel={imovel} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {loading && (
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Loader2 className="size-4 animate-spin" />
+              Buscando imóveis...
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </CardContent>
+      </Card>
+
+      <form
+        className="flex gap-2"
+        onSubmit={e => {
+          e.preventDefault()
+          enviar(input)
+        }}
+      >
+        <Input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Ex: quero um apê de 3 quartos na Vila Mariana até 2 milhões..."
+          disabled={loading}
+          className="flex-1"
+        />
+        <Button type="submit" disabled={loading || !input.trim()}>
+          {loading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+        </Button>
+      </form>
+
+      <p className="text-xs text-gray-400 mt-3 text-center">
+        Powered by gpt-4o-mini · resultados do catálogo salvo no banco
+      </p>
     </div>
   )
 }
