@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
+import { Montserrat } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/app-shell";
+
+const montserrat = Montserrat({
+  subsets: ["latin"],
+  variable: "--font-montserrat",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Tabelões - Catalogador de Imóveis",
@@ -11,7 +18,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className={montserrat.variable}>
       <body className="antialiased font-sans">
         <Suspense fallback={<div className="h-screen bg-gray-50" />}>
           <AppShell>{children}</AppShell>

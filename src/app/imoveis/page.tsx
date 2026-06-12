@@ -81,11 +81,11 @@ function MultiSelectFiltro({
 
   return (
     <div ref={ref} className="relative flex flex-col gap-1 min-w-[160px] flex-1">
-      <label className="text-xs font-medium text-gray-500">{label}</label>
+      <label className="text-sm font-medium text-gray-500">{label}</label>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="h-8 w-full rounded-lg border border-input bg-white px-2 text-sm text-left flex items-center justify-between gap-2 outline-none hover:bg-gray-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-10 w-full rounded-lg border border-input bg-white px-3 text-base text-left flex items-center justify-between gap-2 outline-none hover:bg-gray-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <span className="truncate text-gray-900">{resumo}</span>
         <ChevronDown className={`size-4 shrink-0 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -232,11 +232,11 @@ export default function ImoveisPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="w-full max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Imóveis</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-3xl font-bold text-gray-900">Imóveis</h1>
+          <p className="text-base text-gray-500 mt-2">
             Catálogo de lançamentos salvos no banco mestre
           </p>
         </div>
@@ -250,7 +250,7 @@ export default function ImoveisPage() {
 
       <Card className="mb-6">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Busca e filtros</CardTitle>
+          <CardTitle className="text-lg">Busca e filtros</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="relative">
@@ -290,7 +290,7 @@ export default function ImoveisPage() {
               onChange={v => atualizarFiltroMulti('tipologia', v)}
             />
             <div className="flex flex-col gap-1 min-w-[120px] flex-1">
-              <label className="text-xs font-medium text-gray-500">Valor mín. (R$)</label>
+              <label className="text-sm font-medium text-gray-500">Valor mín. (R$)</label>
               <Input
                 type="number"
                 placeholder="Ex: 500000"
@@ -299,7 +299,7 @@ export default function ImoveisPage() {
               />
             </div>
             <div className="flex flex-col gap-1 min-w-[120px] flex-1">
-              <label className="text-xs font-medium text-gray-500">Valor máx. (R$)</label>
+              <label className="text-sm font-medium text-gray-500">Valor máx. (R$)</label>
               <Input
                 type="number"
                 placeholder="Ex: 2000000"
@@ -313,7 +313,7 @@ export default function ImoveisPage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">
+          <CardTitle className="text-lg">
             {loading
               ? 'Carregando...'
               : `${lancamentos.length} de ${total} imóve${total === 1 ? 'l' : 'is'} exibido${lancamentos.length === 1 ? '' : 's'}`}
@@ -321,37 +321,37 @@ export default function ImoveisPage() {
         </CardHeader>
         <CardContent className="p-0">
           {!loading && lancamentos.length === 0 ? (
-            <p className="text-gray-500 text-sm p-6">
+            <p className="text-gray-500 text-base p-8">
               {temFiltrosAtivos
                 ? 'Nenhum imóvel encontrado com esses filtros.'
                 : 'Nenhum lançamento salvo ainda. Processe um PDF e confirme os dados.'}
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50">
                     {['Construtora', 'Empreendimento', 'Bairro', 'Entrega', 'Tipologia', 'Unidade', 'Andar', 'Metragem', 'Vagas', 'Valor Mín.', 'Valor Máx.', 'Desconto', 'PDF'].map(h => (
-                      <th key={h} className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">{h}</th>
+                      <th key={h} className="text-left p-3 font-medium text-gray-500 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {lancamentos.map(l => (
                     <tr key={l.id} className="border-b hover:bg-gray-50">
-                      <td className="p-2 whitespace-nowrap font-medium">{l.construtora}</td>
-                      <td className="p-2 max-w-[200px] truncate" title={l.empreendimento}>{l.empreendimento}</td>
-                      <td className="p-2 whitespace-nowrap">{l.bairro ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap tabular-nums">{exibirCampo('data_entrega', l.data_entrega)}</td>
-                      <td className="p-2 whitespace-nowrap">{exibirCampo('tipologia', l.tipologia)}</td>
-                      <td className="p-2 whitespace-nowrap tabular-nums text-center">{l.unidade ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap tabular-nums">{exibirCampo('andar', l.andar)}</td>
-                      <td className="p-2 whitespace-nowrap tabular-nums text-right">{exibirCampo('metragem', l.metragem)}</td>
-                      <td className="p-2 whitespace-nowrap text-center">{l.vagas ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap">{formatValor(l.valor_minimo)}</td>
-                      <td className="p-2 whitespace-nowrap">{formatValor(l.valor_maximo)}</td>
-                      <td className="p-2 whitespace-nowrap">{l.desconto_margem ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap">
+                      <td className="p-3 whitespace-nowrap font-medium">{l.construtora}</td>
+                      <td className="p-3 max-w-[240px] truncate" title={l.empreendimento}>{l.empreendimento}</td>
+                      <td className="p-3 whitespace-nowrap">{l.bairro ?? '—'}</td>
+                      <td className="p-3 whitespace-nowrap tabular-nums">{exibirCampo('data_entrega', l.data_entrega)}</td>
+                      <td className="p-3 whitespace-nowrap">{exibirCampo('tipologia', l.tipologia)}</td>
+                      <td className="p-3 whitespace-nowrap tabular-nums text-center">{l.unidade ?? '—'}</td>
+                      <td className="p-3 whitespace-nowrap tabular-nums">{exibirCampo('andar', l.andar)}</td>
+                      <td className="p-3 whitespace-nowrap tabular-nums text-right">{exibirCampo('metragem', l.metragem)}</td>
+                      <td className="p-3 whitespace-nowrap text-center">{l.vagas ?? '—'}</td>
+                      <td className="p-3 whitespace-nowrap">{formatValor(l.valor_minimo)}</td>
+                      <td className="p-3 whitespace-nowrap">{formatValor(l.valor_maximo)}</td>
+                      <td className="p-3 whitespace-nowrap">{l.desconto_margem ?? '—'}</td>
+                      <td className="p-3 whitespace-nowrap">
                         <VerPdfButton processamentoId={l.processamento_id} size="xs" />
                       </td>
                     </tr>

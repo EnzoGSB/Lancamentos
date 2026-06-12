@@ -74,12 +74,12 @@ export default function DashboardPage() {
   }, [deleteTarget, refreshCount])
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+    <div className="w-full max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
         <Link
           href="/upload"
-          className="inline-flex items-center px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 text-sm font-medium"
+          className="inline-flex items-center px-5 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 text-base font-medium"
         >
           + Novo Upload
         </Link>
@@ -88,41 +88,41 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">Lançamentos no Banco</CardTitle>
+            <CardTitle className="text-base font-medium text-gray-500">Lançamentos no Banco</CardTitle>
           </CardHeader>
           <CardContent>
-            <Link href="/imoveis" className="text-3xl font-bold hover:text-gray-700 transition-colors">
+            <Link href="/imoveis" className="text-4xl font-bold hover:text-gray-700 transition-colors">
               {totalLancamentos ?? '—'}
             </Link>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">PDFs Processados</CardTitle>
+            <CardTitle className="text-base font-medium text-gray-500">PDFs Processados</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{processamentos.filter(p => p.status === 'concluido').length}</p>
+            <p className="text-4xl font-bold">{processamentos.filter(p => p.status === 'concluido').length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">Aguardando Revisão</CardTitle>
+            <CardTitle className="text-base font-medium text-gray-500">Aguardando Revisão</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{processamentos.filter(p => p.status === 'aguardando_confirmacao').length}</p>
+            <p className="text-4xl font-bold">{processamentos.filter(p => p.status === 'aguardando_confirmacao').length}</p>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Histórico de Processamentos</CardTitle>
+          <CardTitle className="text-lg">Histórico de Processamentos</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-gray-500 text-sm">Carregando...</p>
+            <p className="text-gray-500 text-base">Carregando...</p>
           ) : processamentos.length === 0 ? (
-            <p className="text-gray-500 text-sm">Nenhum processamento ainda. Comece enviando um PDF!</p>
+            <p className="text-gray-500 text-base">Nenhum processamento ainda. Comece enviando um PDF!</p>
           ) : (
             <div className="divide-y">
               {processamentos.map((p) => {
@@ -130,36 +130,36 @@ export default function DashboardPage() {
                 const analise = p.analise_ia as { construtora?: string; tipo?: string } | null
 
                 return (
-                  <div key={p.id} className="flex items-center justify-between py-3">
+                  <div key={p.id} className="flex items-center justify-between py-4">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-base font-medium text-gray-900 truncate">
                         {p.original_filename || 'Arquivo sem nome'}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-sm text-gray-500">
                         {analise?.construtora ?? (p.tipo === 'multi' ? 'Multi-empreendimento' : p.tipo === 'single' ? 'Empreendimento único' : '—')}
                         {p.created_at && ` • ${new Date(p.created_at).toLocaleString('pt-BR')}`}
                       </p>
                       {p.status === 'concluido' && p.resultado && (
                         <div className="mt-1 space-y-0.5">
                           {p.empreendimentos_inseridos != null && (
-                            <p className="text-xs text-green-600">
+                            <p className="text-sm text-green-600">
                               {p.empreendimentos_inseridos}{' '}
                               {p.empreendimentos_inseridos === 1 ? 'empreendimento' : 'empreendimentos'}
                             </p>
                           )}
-                          <p className="text-xs text-green-600">
+                          <p className="text-sm text-green-600">
                             {(p.resultado as { inseridos: number }).inseridos} lançamentos inseridos
                           </p>
                         </div>
                       )}
-                      {p.erro && <p className="text-xs text-red-500 mt-1">{p.erro}</p>}
+                      {p.erro && <p className="text-sm text-red-500 mt-1">{p.erro}</p>}
                     </div>
                     <div className="flex items-center gap-2 ml-4">
                       <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
                       {p.status === 'aguardando_confirmacao' && (
                         <Link
                           href={`/mapeamento/${p.id}`}
-                          className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                          className="text-sm px-4 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700"
                         >
                           Revisar
                         </Link>
@@ -167,7 +167,7 @@ export default function DashboardPage() {
                       {p.status === 'concluido' && (
                         <Link
                           href={`/preview/${p.id}`}
-                          className="text-xs px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                          className="text-sm px-4 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
                         >
                           Ver dados
                         </Link>
@@ -175,7 +175,7 @@ export default function DashboardPage() {
                       {p.status === 'pendente' && (
                         <Link
                           href={`/mapeamento/${p.id}`}
-                          className="text-xs px-3 py-1 bg-gray-900 text-white rounded hover:bg-gray-800"
+                          className="text-sm px-4 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-800"
                         >
                           Processar
                         </Link>

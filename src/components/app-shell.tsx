@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
 const SIDEBAR_KEY = 'tabeloes-sidebar-collapsed'
-const SIDEBAR_WIDTH = 260
+const SIDEBAR_WIDTH = 300
 
 function NavItem({
   href,
@@ -37,14 +37,14 @@ function NavItem({
       href={href}
       title={collapsed ? label : undefined}
       className={cn(
-        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+        'flex items-center gap-3 rounded-lg px-3 py-2.5 text-base transition-colors',
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
           : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
         collapsed && 'justify-center px-2'
       )}
     >
-      <Icon className="size-4 shrink-0" />
+      <Icon className="size-5 shrink-0" />
       {!collapsed && <span className="truncate">{label}</span>}
     </Link>
   )
@@ -90,9 +90,9 @@ function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   return (
     <>
-      <div className={cn('flex items-center h-12 shrink-0 border-b border-sidebar-border', collapsed ? 'justify-center px-2' : 'justify-between px-3')}>
+      <div className={cn('flex items-center h-14 shrink-0 border-b border-sidebar-border', collapsed ? 'justify-center px-2' : 'justify-between px-4')}>
         {!collapsed && (
-          <Link href="/" className="font-bold text-sm text-sidebar-foreground truncate">
+          <Link href="/" className="font-bold text-lg text-sidebar-foreground truncate">
             Tabelões
           </Link>
         )}
@@ -106,41 +106,41 @@ function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         </button>
       </div>
 
-      <div className={cn('p-2 shrink-0', collapsed && 'px-1.5')}>
+      <div className={cn('p-3 shrink-0', collapsed && 'px-1.5')}>
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="lg"
           onClick={handleNovaPesquisa}
           className={cn(
-            'w-full justify-start gap-2 border-sidebar-border bg-transparent hover:bg-sidebar-accent',
+            'w-full justify-start gap-2 text-base border-sidebar-border bg-transparent hover:bg-sidebar-accent',
             collapsed && 'justify-center px-0'
           )}
           title={collapsed ? 'Nova pesquisa' : undefined}
         >
-          <MessageSquarePlus className="size-4 shrink-0" />
+          <MessageSquarePlus className="size-5 shrink-0" />
           {!collapsed && 'Nova pesquisa'}
         </Button>
       </div>
 
       {!collapsed && (
-        <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
-          <p className="px-3 py-1.5 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wide">
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
+          <p className="px-3 py-2 text-sm font-medium text-sidebar-foreground/50 uppercase tracking-wide">
             Histórico
           </p>
           {conversas.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-sidebar-foreground/50">
+            <p className="px-3 py-2 text-sm text-sidebar-foreground/50 leading-relaxed">
               Suas pesquisas aparecerão aqui
             </p>
           ) : (
-            <ul className="space-y-0.5">
+            <ul className="space-y-1">
               {conversas.map(conversa => (
                 <li key={conversa.id}>
                   <button
                     type="button"
                     onClick={() => handleAbrirConversa(conversa.id)}
                     className={cn(
-                      'group w-full flex items-center gap-1 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                      'group w-full flex items-center gap-1 rounded-lg px-3 py-2.5 text-left text-base transition-colors',
                       isPesquisa && activeId === conversa.id
                         ? 'bg-sidebar-accent text-sidebar-accent-foreground'
                         : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
@@ -167,7 +167,7 @@ function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         </div>
       )}
 
-      <div className={cn('shrink-0 border-t border-sidebar-border p-2 space-y-0.5', collapsed && 'px-1.5')}>
+      <div className={cn('shrink-0 border-t border-sidebar-border p-3 space-y-1', collapsed && 'px-1.5')}>
         <NavItem href="/" icon={Search} label="Pesquisa" active={isPesquisa} collapsed={collapsed} />
         <NavItem href="/dashboard" icon={LayoutDashboard} label="Dashboard" active={pathname === '/dashboard' || pathname.startsWith('/upload')} collapsed={collapsed} />
         <NavItem href="/imoveis" icon={Building2} label="Imóveis" active={pathname === '/imoveis'} collapsed={collapsed} />
@@ -224,22 +224,22 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        <header className="h-12 shrink-0 border-b bg-white flex items-center px-3 gap-2 md:hidden">
+        <header className="h-14 shrink-0 border-b bg-white flex items-center px-4 gap-2 md:hidden">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="p-1.5 rounded-md text-gray-600 hover:bg-gray-100"
+            className="p-2 rounded-md text-gray-600 hover:bg-gray-100"
             aria-label="Abrir menu"
           >
-            <PanelLeftOpen className="size-5" />
+            <PanelLeftOpen className="size-6" />
           </button>
-          <span className="font-semibold text-sm text-gray-900">Tabelões</span>
+          <span className="font-semibold text-lg text-gray-900">Tabelões</span>
         </header>
 
         <main
           className={cn(
             'flex-1 min-h-0 overflow-auto',
-            isPesquisa ? 'flex flex-col' : 'p-4 md:p-6'
+            isPesquisa ? 'flex flex-col' : 'p-5 md:p-8'
           )}
         >
           {children}
