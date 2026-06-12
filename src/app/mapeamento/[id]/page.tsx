@@ -198,12 +198,6 @@ export default function MapeamentoPage() {
     setSelectedCell({ row, field })
   }, [])
 
-  const padronizarTabela = useCallback(() => {
-    setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
-    setLancamentos(prev => normalizarLancamentos(prev))
-    toast.success('Formatação da tabela padronizada')
-  }, [lancamentos])
-
   const desfazer = useCallback(() => {
     setUndoStack(prev => {
       if (prev.length === 0) return prev
@@ -323,15 +317,6 @@ export default function MapeamentoPage() {
                   : 'Clique em uma célula e depois aplique para toda a coluna'}
               >
                 Aplicar para toda a coluna
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={padronizarTabela}
-                title="Padroniza andar, metragem, tipologia e entrega em todas as linhas"
-              >
-                Padronizar formatação
               </Button>
               <Button
                 type="button"

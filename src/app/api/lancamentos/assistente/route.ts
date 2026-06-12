@@ -3,6 +3,29 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { interpretarBusca, lancamentoParaResumo, type ChatTurn } from '@/lib/assistente-imoveis'
 import { buscarLancamentos, carregarOpcoesCatalogo } from '@/lib/lancamentos-query'
 
+function montarRespostaFinal(
+  resposta: string,
+  total: number,
+  usouTolerancia: boolean,
+  usouSimilar: boolean
+): string {
+  if (total === 0) {
+    return `${resposta} Não encontrei imóveis com esses critérios no catálogo. Tente ampliar a busca (outro bairro, faixa de preço maior ou menos filtros).`
+  }
+
+  let suffix = total === 1 ? ' Encontrei 1 imóvel.' : ` Encontrei ${total} imóveis.`
+
+  if (usouSimilar && usouTolerancia) {
+    suffix += ' Incluí opções próximas à faixa solicitada (com tolerância de metragem).'
+  } else if (usouTolerancia) {
+    suffix += ' Alguns resultados estão dentro de uma margem de até 1 m² acima do limite informado.'
+  } else if (usouSimilar) {
+    suffix += ' Incluí imóveis similares que se aproximam do pedido.'
+  }
+
+  return `${resposta}${suffix}`
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -15,21 +38,17 @@ export async function POST(request: NextRequest) {
 
     const opcoes = await carregarOpcoesCatalogo(supabaseAdmin)
     const { resposta, filtros } = await interpretarBusca(message, history, opcoes)
-    const { lancamentos } = await buscarLancamentos(supabaseAdmin, filtros, { limit: 24 })
+    const resultado = await buscarLancamentos(supabaseAdmin, filtros, { limit: 24 })
 
-    const imoveis = lancamentos.map(lancamentoParaResumo)
-
-    let respostaFinal = resposta
-    if (imoveis.length === 0) {
-      respostaFinal = `${resposta} Não encontrei imóveis com esses critérios no catálogo. Tente ampliar a busca (outro bairro, faixa de preço maior ou menos filtros).`
-    } else if (imoveis.length === 1) {
-      respostaFinal = `${resposta} Encontrei 1 imóvel.`
-    } else {
-      respostaFinal = `${resposta} Encontrei ${imoveis.length} imóveis.`
-    }
+    const imoveis = resultado.lancamentos.map(lancamentoParaResumo)
 
     return NextResponse.json({
-      resposta: respostaFinal,
+      resposta: montarRespostaFinal(
+        resposta,
+        imoveis.length,
+        resultado.usou_tolerancia_metragem,
+        resultado.usou_busca_similar
+      ),
       imoveis,
       total: imoveis.length,
       filtros_aplicados: filtros,

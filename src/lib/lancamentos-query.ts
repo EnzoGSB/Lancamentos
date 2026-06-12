@@ -1,17 +1,28 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Lancamento } from './types'
 
+export type CondicaoAlternativa = {
+  suites_min?: number | null
+  dormitorios_min?: number | null
+  exige_duplex?: boolean
+  tipologia_contem?: string[]
+}
+
 export type FiltrosLancamentos = {
   q?: string
+  termos?: string[]
   construtora?: string[]
   empreendimento?: string[]
   bairro?: string[]
   tipologia?: string[]
   valor_min?: number | null
   valor_max?: number | null
+  metragem_min?: number | null
+  metragem_max?: number | null
   dormitorios_min?: number | null
   suites_min?: number | null
   vagas_min?: number | null
+  condicoes_or?: CondicaoAlternativa[]
 }
 
 export type OpcoesCatalogo = {
@@ -20,6 +31,17 @@ export type OpcoesCatalogo = {
   bairros: string[]
   tipologias: string[]
 }
+
+export type ResultadoBusca = {
+  lancamentos: Lancamento[]
+  total: number
+  limit: number
+  offset: number
+  usou_tolerancia_metragem: boolean
+  usou_busca_similar: boolean
+}
+
+const TOLERANCIA_METRAGEM_SUPERIOR = 1
 
 function escapeIlike(value: string) {
   return value.replace(/[%_\\]/g, '\\$&')
@@ -35,50 +57,202 @@ function applyMultiFilter<T extends { eq: (col: string, val: string) => T; in: (
   return query.in(column, values)
 }
 
+export function textoCompletoImovel(l: Lancamento): string {
+  const parts: string[] = [
+    l.construtora,
+    l.empreendimento,
+    l.bairro ?? '',
+    l.tipologia ?? '',
+    l.unidade ?? '',
+    l.andar ?? '',
+    l.endereco ?? '',
+    l.vagas ?? '',
+    l.desconto_margem ?? '',
+    l.data_entrega ?? '',
+    l.metragem ?? '',
+  ]
+  if (l.mais_detalhes != null) {
+    try {
+      parts.push(typeof l.mais_detalhes === 'string'
+        ? l.mais_detalhes
+        : JSON.stringify(l.mais_detalhes))
+    } catch { /* ignore */ }
+  }
+  return parts.filter(Boolean).join(' ').toLowerCase()
+}
+
+export function parseMetragemM2(val: string | null | undefined): { min: number | null; max: number | null } {
+  if (!val?.trim()) return { min: null, max: null }
+  const core = val.trim().replace(/\s+/g, '').replace(/m²?2?$/i, '')
+  const parseNum = (s: string) => {
+    const n = parseFloat(s.replace(',', '.'))
+    return Number.isFinite(n) ? n : null
+  }
+  if (core.includes('-')) {
+    const [a, b] = core.split('-')
+    return { min: parseNum(a), max: parseNum(b) }
+  }
+  const n = parseNum(core)
+  return { min: n, max: n }
+}
+
+export function extrairSuites(tipologia: string | null | undefined): number | null {
+  if (!tipologia) return null
+  const m = tipologia.match(/(\d+)\s*suítes?/i)
+  return m ? parseInt(m[1], 10) : null
+}
+
+export function extrairDormitorios(tipologia: string | null | undefined): number | null {
+  if (!tipologia) return null
+  const m = tipologia.match(/(\d+)\s*dorms?/i) ?? tipologia.match(/(\d+)\s*dorm\.?/i)
+  return m ? parseInt(m[1], 10) : null
+}
+
+export function isDuplex(l: Lancamento): boolean {
+  return /duplex/i.test(textoCompletoImovel(l))
+}
+
 function parseVagas(val: string | null | undefined): number | null {
   if (!val?.trim()) return null
   const n = parseInt(val.trim(), 10)
   return Number.isFinite(n) ? n : null
 }
 
-function filtrarPosQuery(items: Lancamento[], filtros: FiltrosLancamentos): Lancamento[] {
-  let result = items
+function matchesMetragem(
+  l: Lancamento,
+  min: number | null | undefined,
+  max: number | null | undefined,
+  toleranciaSuperior: number
+): boolean {
+  if (min == null && max == null) return true
+  const item = parseMetragemM2(l.metragem)
+  if (item.min == null && item.max == null) return false
 
-  if (filtros.dormitorios_min != null && filtros.dormitorios_min > 0) {
-    const n = filtros.dormitorios_min
-    const re = new RegExp(`\\b${n}\\s*dorms?\\b`, 'i')
-    result = result.filter(l => re.test(l.tipologia ?? ''))
-  }
+  const iMin = item.min ?? item.max!
+  const iMax = item.max ?? item.min!
+  const fMin = min ?? 0
+  const fMax = max != null ? max + toleranciaSuperior : Infinity
 
-  if (filtros.suites_min != null && filtros.suites_min > 0) {
-    const n = filtros.suites_min
-    const re = new RegExp(`\\b${n}\\s*suítes?\\b`, 'i')
-    result = result.filter(l => re.test(l.tipologia ?? ''))
-  }
-
-  if (filtros.vagas_min != null && filtros.vagas_min > 0) {
-    result = result.filter(l => {
-      const v = parseVagas(l.vagas)
-      return v != null && v >= filtros.vagas_min!
-    })
-  }
-
-  return result
+  return iMax >= fMin && iMin <= fMax
 }
 
-export async function buscarLancamentos(
-  supabase: SupabaseClient,
+function matchesCondicaoOr(l: Lancamento, cond: CondicaoAlternativa): boolean {
+  const tip = l.tipologia ?? ''
+  let hasCriterion = false
+
+  if (cond.exige_duplex) {
+    hasCriterion = true
+    if (!isDuplex(l)) return false
+  }
+
+  if (cond.suites_min != null && cond.suites_min > 0) {
+    hasCriterion = true
+    const s = extrairSuites(tip)
+    if (s == null || s < cond.suites_min) return false
+  }
+
+  if (cond.dormitorios_min != null && cond.dormitorios_min > 0) {
+    hasCriterion = true
+    const d = extrairDormitorios(tip)
+    if (d == null || d < cond.dormitorios_min) return false
+  }
+
+  if (cond.tipologia_contem?.length) {
+    hasCriterion = true
+    const tipLower = tip.toLowerCase()
+    if (!cond.tipologia_contem.some(t => tipLower.includes(t.toLowerCase()))) return false
+  }
+
+  return hasCriterion
+}
+
+function matchesTermos(l: Lancamento, termos: string[] | undefined): boolean {
+  if (!termos?.length) return true
+  const texto = textoCompletoImovel(l)
+  return termos.every(t => texto.includes(t.toLowerCase()))
+}
+
+function filtrarPosQuery(
+  items: Lancamento[],
   filtros: FiltrosLancamentos,
-  opts?: { limit?: number; offset?: number }
-) {
-  const limit = Math.min(opts?.limit ?? 50, 100)
-  const offset = Math.max(opts?.offset ?? 0, 0)
-  const precisaPosFiltro = (filtros.dormitorios_min ?? 0) > 0
+  toleranciaMetragem: number
+): Lancamento[] {
+  return items.filter(l => {
+    if (!matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, toleranciaMetragem)) {
+      return false
+    }
+
+    if (filtros.condicoes_or?.length) {
+      if (!filtros.condicoes_or.some(c => matchesCondicaoOr(l, c))) return false
+    } else {
+      if (filtros.dormitorios_min != null && filtros.dormitorios_min > 0) {
+        const d = extrairDormitorios(l.tipologia)
+        if (d == null || d < filtros.dormitorios_min) return false
+      }
+      if (filtros.suites_min != null && filtros.suites_min > 0) {
+        const s = extrairSuites(l.tipologia)
+        if (s == null || s < filtros.suites_min) return false
+      }
+    }
+
+    if (filtros.vagas_min != null && filtros.vagas_min > 0) {
+      const v = parseVagas(l.vagas)
+      if (v == null || v < filtros.vagas_min) return false
+    }
+
+    if (!matchesTermos(l, filtros.termos)) return false
+
+    return true
+  })
+}
+
+function scoreRelevancia(l: Lancamento, filtros: FiltrosLancamentos): number {
+  let score = 0
+  const texto = textoCompletoImovel(l)
+
+  if (filtros.bairro?.length && l.bairro && filtros.bairro.some(b =>
+    l.bairro!.toLowerCase().includes(b.toLowerCase()))) {
+    score += 15
+  }
+
+  if (filtros.metragem_min != null || filtros.metragem_max != null) {
+    if (matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, 0)) score += 20
+    else if (matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, TOLERANCIA_METRAGEM_SUPERIOR)) score += 10
+  }
+
+  for (const t of filtros.termos ?? []) {
+    if (texto.includes(t.toLowerCase())) score += 5
+  }
+
+  if (filtros.q && texto.includes(filtros.q.toLowerCase())) score += 5
+
+  if (l.valor_minimo != null) score += 2
+  if (l.metragem) score += 2
+  if (l.tipologia) score += 2
+
+  return score
+}
+
+function ordenarPorRelevancia(items: Lancamento[], filtros: FiltrosLancamentos): Lancamento[] {
+  return [...items].sort((a, b) => scoreRelevancia(b, filtros) - scoreRelevancia(a, filtros))
+}
+
+function precisaPosFiltro(filtros: FiltrosLancamentos): boolean {
+  return (filtros.metragem_min ?? 0) > 0
+    || filtros.metragem_max != null
+    || (filtros.dormitorios_min ?? 0) > 0
     || (filtros.suites_min ?? 0) > 0
     || (filtros.vagas_min ?? 0) > 0
+    || (filtros.condicoes_or?.length ?? 0) > 0
+    || (filtros.termos?.length ?? 0) > 0
+}
 
-  const fetchLimit = precisaPosFiltro ? Math.min(limit * 8, 800) : limit
-
+async function executarQuerySql(
+  supabase: SupabaseClient,
+  filtros: FiltrosLancamentos,
+  fetchLimit: number,
+  offset: number
+): Promise<Lancamento[]> {
   let query = supabase
     .from('lancamentos')
     .select('*')
@@ -87,18 +261,28 @@ export async function buscarLancamentos(
     .order('tipologia')
     .range(offset, offset + fetchLimit - 1)
 
-  if (filtros.q?.trim()) {
-    const term = escapeIlike(filtros.q.trim())
-    query = query.or(
-      [
-        `construtora.ilike.%${term}%`,
-        `empreendimento.ilike.%${term}%`,
-        `bairro.ilike.%${term}%`,
-        `tipologia.ilike.%${term}%`,
-        `unidade.ilike.%${term}%`,
-        `endereco.ilike.%${term}%`,
-      ].join(',')
-    )
+  const termosBusca = [
+    ...(filtros.q ? [filtros.q] : []),
+    ...(filtros.termos ?? []),
+  ]
+
+  if (termosBusca.length > 0) {
+    const orParts: string[] = []
+    for (const term of termosBusca) {
+      const t = escapeIlike(term)
+      orParts.push(
+        `construtora.ilike.%${t}%`,
+        `empreendimento.ilike.%${t}%`,
+        `bairro.ilike.%${t}%`,
+        `tipologia.ilike.%${t}%`,
+        `unidade.ilike.%${t}%`,
+        `andar.ilike.%${t}%`,
+        `endereco.ilike.%${t}%`,
+        `metragem.ilike.%${t}%`,
+        `desconto_margem.ilike.%${t}%`,
+      )
+    }
+    query = query.or(orParts.join(','))
   }
 
   query = applyMultiFilter(query, 'construtora', filtros.construtora)
@@ -115,13 +299,75 @@ export async function buscarLancamentos(
 
   const { data, error } = await query
   if (error) throw new Error(error.message)
+  return (data ?? []) as Lancamento[]
+}
 
-  let lancamentos = (data ?? []) as Lancamento[]
-  if (precisaPosFiltro) {
-    lancamentos = filtrarPosQuery(lancamentos, filtros).slice(0, limit)
+function buscarEmMemoria(
+  candidatos: Lancamento[],
+  filtros: FiltrosLancamentos,
+  toleranciaMetragem: number,
+  limit: number
+): Lancamento[] {
+  const filtrados = filtrarPosQuery(candidatos, filtros, toleranciaMetragem)
+  return ordenarPorRelevancia(filtrados, filtros).slice(0, limit)
+}
+
+export async function buscarLancamentos(
+  supabase: SupabaseClient,
+  filtros: FiltrosLancamentos,
+  opts?: { limit?: number; offset?: number }
+): Promise<ResultadoBusca> {
+  const limit = Math.min(opts?.limit ?? 50, 100)
+  const offset = Math.max(opts?.offset ?? 0, 0)
+  const posFiltro = precisaPosFiltro(filtros)
+  const fetchLimit = posFiltro ? Math.min(limit * 12, 1000) : limit
+
+  const candidatos = await executarQuerySql(supabase, filtros, fetchLimit, offset)
+
+  let lancamentos = buscarEmMemoria(candidatos, filtros, TOLERANCIA_METRAGEM_SUPERIOR, limit)
+  let usouTolerancia = false
+  let usouSimilar = false
+
+  if (lancamentos.length === 0 && posFiltro && candidatos.length > 0) {
+    lancamentos = buscarEmMemoria(candidatos, filtros, TOLERANCIA_METRAGEM_SUPERIOR + 3, limit)
+    if (lancamentos.length > 0) {
+      usouTolerancia = true
+      usouSimilar = true
+    }
   }
 
-  return { lancamentos, total: lancamentos.length, limit, offset }
+  if (lancamentos.length === 0 && posFiltro && candidatos.length > 0) {
+    const filtrosSimilares: FiltrosLancamentos = {
+      ...filtros,
+      metragem_min: null,
+      metragem_max: null,
+      condicoes_or: undefined,
+      dormitorios_min: null,
+      suites_min: null,
+    }
+    lancamentos = ordenarPorRelevancia(
+      filtrarPosQuery(candidatos, filtrosSimilares, 0),
+      filtros
+    ).slice(0, limit)
+    if (lancamentos.length > 0) usouSimilar = true
+  }
+
+  if (lancamentos.length > 0 && filtros.metragem_max != null) {
+    const algumNaTolerancia = lancamentos.some(l =>
+      !matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, 0)
+      && matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, TOLERANCIA_METRAGEM_SUPERIOR)
+    )
+    if (algumNaTolerancia) usouTolerancia = true
+  }
+
+  return {
+    lancamentos,
+    total: lancamentos.length,
+    limit,
+    offset,
+    usou_tolerancia_metragem: usouTolerancia,
+    usou_busca_similar: usouSimilar,
+  }
 }
 
 export async function carregarOpcoesCatalogo(supabase: SupabaseClient): Promise<OpcoesCatalogo> {
