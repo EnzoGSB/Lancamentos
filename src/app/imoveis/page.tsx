@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import type { Lancamento } from '@/lib/types'
 import { LancamentoMobileCard } from '@/components/lancamento-mobile-card'
 import { LancamentosTable } from '@/components/lancamentos-table'
+import { ImoveisFontSizeControl } from '@/components/imoveis-font-size-control'
+import { FONT_SIZE_DEFAULT, loadFontSize, saveFontSize } from '@/lib/imoveis-font-size'
 
 type FiltrosMulti = {
   construtora: string[]
@@ -134,6 +136,16 @@ export default function ImoveisPage() {
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [fontSizePx, setFontSizePx] = useState(FONT_SIZE_DEFAULT)
+
+  useEffect(() => {
+    setFontSizePx(loadFontSize())
+  }, [])
+
+  const aplicarFontSize = (size: number) => {
+    setFontSizePx(size)
+    saveFontSize(size)
+  }
 
   useEffect(() => {
     fetch('/api/lancamentos/opcoes')
@@ -229,19 +241,22 @@ export default function ImoveisPage() {
 
   return (
     <div className="w-full mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-5 sm:mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-5 sm:mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Imóveis</h1>
           <p className="text-sm sm:text-base text-gray-500 mt-1 sm:mt-2">
             Catálogo de lançamentos salvos no banco mestre
           </p>
         </div>
-        {temFiltrosAtivos && (
-          <Button variant="outline" size="sm" onClick={limparFiltros} className="w-full sm:w-auto touch-manipulation">
-            <X className="size-3.5 mr-1" />
-            Limpar filtros
-          </Button>
-        )}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+          <ImoveisFontSizeControl value={fontSizePx} onApply={aplicarFontSize} />
+          {temFiltrosAtivos && (
+            <Button variant="outline" size="sm" onClick={limparFiltros} className="w-full sm:w-auto touch-manipulation">
+              <X className="size-3.5 mr-1" />
+              Limpar filtros
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card className="mb-6">
@@ -326,11 +341,11 @@ export default function ImoveisPage() {
             <>
               <div className="md:hidden p-3 space-y-3">
                 {lancamentos.map(l => (
-                  <LancamentoMobileCard key={l.id} lancamento={l} />
+                  <LancamentoMobileCard key={l.id} lancamento={l} fontSizePx={fontSizePx} />
                 ))}
               </div>
               <div className="hidden md:block p-1">
-                <LancamentosTable lancamentos={lancamentos} showPdf />
+                <LancamentosTable lancamentos={lancamentos} showPdf fontSizePx={fontSizePx} />
               </div>
             </>
           )}

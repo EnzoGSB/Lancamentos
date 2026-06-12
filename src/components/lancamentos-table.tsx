@@ -16,11 +16,15 @@ const TD_NUM = cn(TD, 'tabular-nums whitespace-nowrap')
 type LancamentosTableProps = {
   lancamentos: Lancamento[]
   showPdf?: boolean
+  fontSizePx?: number
 }
 
-export function LancamentosTable({ lancamentos, showPdf = true }: LancamentosTableProps) {
+export function LancamentosTable({ lancamentos, showPdf = true, fontSizePx }: LancamentosTableProps) {
   return (
-    <table className="w-full table-fixed text-xs">
+    <table
+      className={cn('w-full table-fixed', fontSizePx == null && 'text-xs')}
+      style={fontSizePx != null ? { fontSize: fontSizePx } : undefined}
+    >
       <colgroup>
         <col style={{ width: '8%' }} />
         <col style={{ width: showPdf ? '13%' : '16%' }} />
