@@ -130,3 +130,12 @@ export function matchesFiltrosTipologiaDormitorio(
   return matchesFiltroTipo(tipologia, tipos)
     && matchesFiltroDormitorio(tipologia, dormitorios)
 }
+
+export function exibirTipoImovel(tipologia: string | null | undefined): string {
+  const tipos = extrairTiposImovel(tipologia)
+  return tipos.length > 0 ? tipos.join(', ') : '—'
+}
+
+export function exibirDormitoriosImovel(tipologia: string | null | undefined): string {
+  return rotuloDormitorios(tipologia) ?? '—'
+}

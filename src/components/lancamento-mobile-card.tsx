@@ -1,5 +1,6 @@
 import type { Lancamento } from '@/lib/types'
 import { exibirCampo } from '@/lib/formatar-lancamento'
+import { exibirDormitoriosImovel, exibirTipoImovel } from '@/lib/tipologia-filtro'
 import { VerPdfButton } from '@/components/ver-pdf-button'
 import { cn } from '@/lib/utils'
 
@@ -29,8 +30,12 @@ export function LancamentoMobileCard({ lancamento: l, showPdf = true, fontSizePx
       </div>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
         <div>
-          <dt className={labelClass} style={labelStyle}>Tipologia</dt>
-          <dd className="text-gray-900">{exibirCampo('tipologia', l.tipologia)}</dd>
+          <dt className={labelClass} style={labelStyle}>Tipo</dt>
+          <dd className="text-gray-900">{exibirTipoImovel(l.tipologia)}</dd>
+        </div>
+        <div>
+          <dt className={labelClass} style={labelStyle}>Dormitórios</dt>
+          <dd className="text-gray-900">{exibirDormitoriosImovel(l.tipologia)}</dd>
         </div>
         <div>
           <dt className={labelClass} style={labelStyle}>Unidade</dt>

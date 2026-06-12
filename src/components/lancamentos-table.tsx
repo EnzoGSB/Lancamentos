@@ -1,5 +1,6 @@
 import type { Lancamento } from '@/lib/types'
 import { exibirCampo } from '@/lib/formatar-lancamento'
+import { exibirDormitoriosImovel, exibirTipoImovel } from '@/lib/tipologia-filtro'
 import { VerPdfButton } from '@/components/ver-pdf-button'
 import { cn } from '@/lib/utils'
 
@@ -30,7 +31,8 @@ export function LancamentosTable({ lancamentos, showPdf = true, fontSizePx }: La
         <col style={{ width: showPdf ? '13%' : '16%' }} />
         <col style={{ width: '9%' }} />
         <col style={{ width: '7%' }} />
-        <col style={{ width: '12%' }} />
+        <col style={{ width: '7%' }} />
+        <col style={{ width: '7%' }} />
         <col style={{ width: '5%' }} />
         <col style={{ width: '5%' }} />
         <col style={{ width: '5%' }} />
@@ -46,7 +48,8 @@ export function LancamentosTable({ lancamentos, showPdf = true, fontSizePx }: La
           <th className={TH}>Empreendimento</th>
           <th className={TH}>Bairro</th>
           <th className={TH}>Entrega</th>
-          <th className={TH}>Tipologia</th>
+          <th className={TH}>Tipo</th>
+          <th className={TH}>Dormitórios</th>
           <th className={TH}>Unidade</th>
           <th className={TH}>Andar</th>
           <th className={TH}>m²</th>
@@ -64,7 +67,8 @@ export function LancamentosTable({ lancamentos, showPdf = true, fontSizePx }: La
             <td className={TD_WRAP} title={l.empreendimento}>{l.empreendimento}</td>
             <td className={TD_WRAP}>{l.bairro ?? '—'}</td>
             <td className={TD_NUM}>{exibirCampo('data_entrega', l.data_entrega)}</td>
-            <td className={TD_WRAP}>{exibirCampo('tipologia', l.tipologia)}</td>
+            <td className={TD_WRAP}>{exibirTipoImovel(l.tipologia)}</td>
+            <td className={TD_WRAP}>{exibirDormitoriosImovel(l.tipologia)}</td>
             <td className={cn(TD_NUM, 'text-center')}>{l.unidade ?? '—'}</td>
             <td className={TD_NUM}>{exibirCampo('andar', l.andar)}</td>
             <td className={cn(TD_NUM, 'text-right')}>{exibirCampo('metragem', l.metragem)}</td>
