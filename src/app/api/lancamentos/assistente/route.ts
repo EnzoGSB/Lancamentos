@@ -6,8 +6,7 @@ import { buscarLancamentos, carregarOpcoesCatalogo } from '@/lib/lancamentos-que
 function montarRespostaFinal(
   resposta: string,
   total: number,
-  usouTolerancia: boolean,
-  usouSimilar: boolean
+  usouTolerancia: boolean
 ): string {
   if (total === 0) {
     return `${resposta} Não encontrei imóveis com esses critérios no catálogo. Tente ampliar a busca (outro bairro, faixa de preço maior ou menos filtros).`
@@ -15,12 +14,8 @@ function montarRespostaFinal(
 
   let suffix = total === 1 ? ' Encontrei 1 imóvel.' : ` Encontrei ${total} imóveis.`
 
-  if (usouSimilar && usouTolerancia) {
-    suffix += ' Incluí opções próximas à faixa solicitada (com tolerância de metragem).'
-  } else if (usouTolerancia) {
-    suffix += ' Alguns resultados estão dentro de uma margem de até 1 m² acima do limite informado.'
-  } else if (usouSimilar) {
-    suffix += ' Incluí imóveis similares que se aproximam do pedido.'
+  if (usouTolerancia) {
+    suffix += ' Alguns resultados estão dentro de uma margem de até 5% da metragem solicitada.'
   }
 
   return `${resposta}${suffix}`
@@ -46,8 +41,7 @@ export async function POST(request: NextRequest) {
       resposta: montarRespostaFinal(
         resposta,
         imoveis.length,
-        resultado.usou_tolerancia_metragem,
-        resultado.usou_busca_similar
+        resultado.usou_tolerancia_metragem
       ),
       imoveis,
       total: imoveis.length,

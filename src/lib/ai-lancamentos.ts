@@ -4,6 +4,47 @@ import { createPDFParser } from './pdf-parse-server'
 import type { AnaliseIA, LancamentoAI } from './types'
 import { normalizarLancamentos } from './formatar-lancamento'
 
+const AI_TEMPERATURE = 0
+const MAX_TENTATIVAS_EXTRACAO = 3
+/** Faixas vazias acima desta fração → erro (evita resultado incompleto silencioso). */
+const MAX_FAIXAS_VAZIAS_RATIO = 0.15
+
+function numFaixasPorDocumento(totalPaginas: number, empreendimentosHint: number): number {
+  if (totalPaginas >= 15 || empreendimentosHint >= 45) return 5
+  if (totalPaginas >= 8 || empreendimentosHint >= 30) return 4
+  return 3
+}
+
+async function extrairFaixasComCobertura<T>(
+  items: T[],
+  extractFn: (item: T, index: number) => Promise<LancamentoAI[]>
+): Promise<LancamentoAI[]> {
+  if (items.length === 0) return []
+
+  const results: LancamentoAI[][] = new Array(items.length)
+
+  await mapWithConcurrency(items, 4, async (item, i) => {
+    results[i] = await extractFn(item, i)
+  })
+
+  const indicesVazios = results
+    .map((r, i) => (r.length === 0 ? i : -1))
+    .filter(i => i >= 0)
+
+  for (const i of indicesVazios) {
+    results[i] = await extractFn(items[i], i)
+  }
+
+  const aindaVazios = indicesVazios.filter(i => results[i].length === 0)
+  if (aindaVazios.length > 0 && aindaVazios.length / items.length > MAX_FAIXAS_VAZIAS_RATIO) {
+    throw new Error(
+      `Extração incompleta: ${aindaVazios.length} de ${items.length} faixas sem dados. Use "Processar com IA" novamente nesta tela.`
+    )
+  }
+
+  return results.flat()
+}
+
 const LANCAMENTO_SCHEMA = `{
   "construtora": "nome da construtora",
   "empreendimento": "nome do empreendimento",
@@ -147,7 +188,7 @@ REGRA PARA construtora:
         content: `Nome do arquivo: "${filename}"\n\nTexto extraído do PDF:\n\n${texto.substring(0, 16000)}`,
       },
     ],
-    temperature: 0.1,
+    temperature: AI_TEMPERATURE,
     response_format: { type: 'json_object' },
   })
 
@@ -208,8 +249,8 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoN
     return normalizarLancamentos(deduplicar(result), textoNativo)
   }
 
-  const numFaixas = paginas.length >= 10 ? 5 : paginas.length >= 6 ? 4 : 3
   const totalPaginas = paginas.length
+  const numFaixas = numFaixasPorDocumento(totalPaginas, analise.empreendimentos_identificados?.length ?? 0)
 
   type FaixaJob = { png: Buffer; pagina: number }
   const faixasPorPagina = await Promise.all(
@@ -220,14 +261,10 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoN
   )
   const jobs: FaixaJob[] = faixasPorPagina.flat()
 
-  const bruto = (await mapWithConcurrency(
-    jobs,
-    4,
-    ({ png, pagina }) => {
-      const contexto = `${contextoBase}\nPágina ${pagina} de ${totalPaginas}. Extraia todos os blocos de tipologia visíveis nesta faixa — inclusive tabelas de PREÇO DE VENDA por andar.`
-      return _extrairDeImagem(SYSTEM_PROMPT_SINGLE_FAIXA, png, contexto, textoNativo)
-    }
-  )).flat()
+  const bruto = await extrairFaixasComCobertura(jobs, async ({ png, pagina }) => {
+    const contexto = `${contextoBase}\nPágina ${pagina} de ${totalPaginas}. Extraia todos os blocos de tipologia visíveis nesta faixa — inclusive tabelas de PREÇO DE VENDA por andar.`
+    return _extrairDeImagem(SYSTEM_PROMPT_SINGLE_FAIXA, png, contexto, textoNativo)
+  })
 
   return normalizarLancamentos(deduplicar(bruto), textoNativo)
 }
@@ -248,20 +285,15 @@ export async function processarMulti(buffer: Buffer, analise: AnaliseIA, textoNa
     'Extraia TODOS os empreendimentos visíveis nesta faixa — inclusive blocos menores no meio/fim da tabela.',
   ].filter(Boolean).join('\n')
 
-  // Cada página vira N faixas; processa com concorrência limitada para evitar falhas silenciosas.
-  // Mais faixas em tabelões densos → menos linhas por chamada, menos risco de truncar/omitir.
-  const numFaixas = (analise.empreendimentos_identificados?.length ?? 0) >= 45 ? 5
-    : (analise.empreendimentos_identificados?.length ?? 0) >= 30 ? 4
-    : 3
+  const totalPaginas = paginas.length
+  const numFaixas = numFaixasPorDocumento(totalPaginas, analise.empreendimentos_identificados?.length ?? 0)
 
   const faixasPorPagina = await Promise.all(paginas.map(png => cortarEmFaixas(png, numFaixas)))
   const todasFaixas = faixasPorPagina.flat()
 
-  const bruto = (await mapWithConcurrency(
-    todasFaixas,
-    4,
-    faixa => _extrairDeImagem(SYSTEM_PROMPT_MULTI, faixa, contexto, textoNativo)
-  )).flat()
+  const bruto = await extrairFaixasComCobertura(todasFaixas, faixa =>
+    _extrairDeImagem(SYSTEM_PROMPT_MULTI, faixa, contexto, textoNativo)
+  )
 
   return normalizarLancamentos(deduplicar(bruto), textoNativo)
 }
@@ -527,47 +559,55 @@ async function _extrairDePdf(
   contexto: string,
   textoNativo = ''
 ): Promise<LancamentoAI[]> {
-  try {
-    const blocoTexto = textoNativo
-      ? `\n\nTEXTO NATIVO DO PDF (referência do DOCUMENTO INTEIRO — nomes e valores EXATOS). Use para completar campos de linhas visíveis em todas as páginas. Não omita linhas por falta de dado — use null:\n${textoNativo.substring(0, 40000)}`
-      : ''
+  const blocoTexto = textoNativo
+    ? `\n\nTEXTO NATIVO DO PDF (referência do DOCUMENTO INTEIRO — nomes e valores EXATOS). Use para completar campos de linhas visíveis em todas as páginas. Não omita linhas por falta de dado — use null:\n${textoNativo.substring(0, 40000)}`
+    : ''
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_EXTRACTOR,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'file',
-              file: {
-                filename: 'documento.pdf',
-                file_data: `data:application/pdf;base64,${pdfBase64}`,
+  for (let attempt = 0; attempt < MAX_TENTATIVAS_EXTRACAO; attempt++) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: AI_MODEL_EXTRACTOR,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'file',
+                file: {
+                  filename: 'documento.pdf',
+                  file_data: `data:application/pdf;base64,${pdfBase64}`,
+                },
               },
-            },
-            { type: 'text', text: `${contexto}\n\nAnalise o PDF com cuidado e extraia TODAS as tipologias/linhas de imóvel visíveis — uma por linha. Inclua linhas incompletas (campos ausentes = null). Não pule linhas ambíguas.${blocoTexto}` },
-          ],
-        },
-      ],
-      temperature: 0.1,
-      response_format: { type: 'json_object' },
-      max_tokens: 16000,
-    })
+              { type: 'text', text: `${contexto}\n\nAnalise o PDF com cuidado e extraia TODAS as tipologias/linhas de imóvel visíveis — uma por linha. Inclua linhas incompletas (campos ausentes = null). Não pule linhas ambíguas.${blocoTexto}` },
+            ],
+          },
+        ],
+        temperature: AI_TEMPERATURE,
+        response_format: { type: 'json_object' },
+        max_tokens: 16000,
+      })
 
-    const content = completion.choices[0]?.message?.content
-    if (!content) return []
+      const content = completion.choices[0]?.message?.content
+      if (!content) continue
 
-    if (completion.choices[0]?.finish_reason === 'length') {
-      console.error('[extrairDePdf] resposta truncada (max_tokens) — tipologias podem ter sido omitidas')
+      if (completion.choices[0]?.finish_reason === 'length') {
+        console.error('[extrairDePdf] resposta truncada (max_tokens) — tipologias podem ter sido omitidas')
+        if (attempt < MAX_TENTATIVAS_EXTRACAO - 1) continue
+      }
+
+      const parsed = JSON.parse(content)
+      const lancamentos = (parsed.lancamentos ?? []) as LancamentoAI[]
+      if (lancamentos.length === 0 && attempt < MAX_TENTATIVAS_EXTRACAO - 1) continue
+      return lancamentos
+    } catch (err) {
+      if (attempt === MAX_TENTATIVAS_EXTRACAO - 1) {
+        console.error('[extrairDePdf] falha na extração:', err)
+      }
     }
-
-    const parsed = JSON.parse(content)
-    return (parsed.lancamentos ?? []) as LancamentoAI[]
-  } catch (err) {
-    console.error('[extrairDePdf] falha na extração:', err)
-    return []
   }
+
+  return []
 }
 
 // Extração a partir de UMA faixa (tile) de página em alta resolução — usado no fluxo multi.
@@ -583,7 +623,7 @@ async function _extrairDeImagem(
     ? `\n\nTEXTO NATIVO DO PDF (dicionário do DOCUMENTO INTEIRO — nomes e valores EXATOS, fora de ordem). Use para COMPLETAR campos das linhas VISÍVEIS nesta faixa (preço, entrega, unidade, andar cortados na imagem). Não omita linhas visíveis por falta de dado — use null. Não adicione linhas que não aparecem nesta faixa:\n${textoNativo.substring(0, 40000)}`
     : ''
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < MAX_TENTATIVAS_EXTRACAO; attempt++) {
     try {
       const completion = await openai.chat.completions.create({
         model: AI_MODEL_EXTRACTOR,
@@ -597,7 +637,7 @@ async function _extrairDeImagem(
             ],
           },
         ],
-        temperature: 0.1,
+        temperature: AI_TEMPERATURE,
         response_format: { type: 'json_object' },
         max_tokens: 16000,
       })
@@ -607,13 +647,16 @@ async function _extrairDeImagem(
 
       if (completion.choices[0]?.finish_reason === 'length') {
         console.error('[extrairDeImagem] resposta truncada (max_tokens) — faixa pode ter linhas omitidas')
+        if (attempt < MAX_TENTATIVAS_EXTRACAO - 1) continue
       }
 
       const parsed = JSON.parse(content)
-      return (parsed.lancamentos ?? []) as LancamentoAI[]
+      const lancamentos = (parsed.lancamentos ?? []) as LancamentoAI[]
+      if (lancamentos.length === 0 && attempt < MAX_TENTATIVAS_EXTRACAO - 1) continue
+      return lancamentos
     } catch (err) {
-      if (attempt === 1) {
-        console.error('[extrairDeImagem] falha na faixa após retry:', err)
+      if (attempt === MAX_TENTATIVAS_EXTRACAO - 1) {
+        console.error('[extrairDeImagem] falha na faixa após retries:', err)
       }
     }
   }

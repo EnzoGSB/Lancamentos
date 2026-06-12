@@ -32,7 +32,7 @@ de forma íntegra e correta. O usuário revisa e confirma antes de salvar.
 | `src/lib/ai-lancamentos.ts` | **Coração do pipeline.** Classificação + extração via IA. |
 | `src/lib/openai.ts` | Cliente OpenAI e nomes dos modelos. |
 | `src/lib/types.ts` | Tipos `Lancamento`, `ProcessamentoLancamento`, `AnaliseIA`, `LancamentoAI`. |
-| `src/app/api/upload/route.ts` | Upload do PDF para o Storage + cria registro em `processamentos_lancamentos`. |
+| `src/app/api/upload/route.ts` | Upload do PDF para o Storage + registro em `processamentos_lancamentos` + **bloqueio por `content_hash`** (v1.2). |
 | `src/app/api/processar/route.ts` | Orquestra: extrai texto, classifica, extrai, salva resultado. |
 | `src/app/api/confirmar/route.ts` | Persiste os lançamentos revisados em `lancamentos`. |
 
@@ -136,10 +136,13 @@ Danti revelou: prompt enviesado para o Cyrela trazia 29 de ~50 linhas).
 |-----------|-------|------|---------|
 | Modelo classificador | `gpt-4o-mini` | `openai.ts` | barato, só classifica |
 | Modelo extrator | `gpt-4.1` | `openai.ts` | visão + aderência a JSON |
-| `temperature` | `0.1` | todas as chamadas | determinismo |
+| `temperature` | `0` | todas as chamadas | máximo determinismo (v1.2) |
 | `response_format` | `json_object` | todas | saída estruturada |
 | Render scale (multi) | `3` | `renderizarPaginas` | alta resolução |
-| Nº de faixas (tiling) | `3` | `processarMulti` → `cortarEmFaixas(png, 3)` | resolução efetiva por linha |
+| Nº de faixas (tiling) | `3`, `4` ou `5` | `numFaixasPorDocumento` | baseado em **nº de páginas** (+ hint de empreendimentos); v1.2 |
+| Retentativas por faixa | `3` | `_extrairDeImagem`, `_extrairDePdf` | retry em vazio/truncado; v1.2 |
+| Segunda passagem faixas vazias | sim | `extrairFaixasComCobertura` | reprocessa faixas que falharam; v1.2 |
+| Limite faixas vazias | `15%` | `extrairFaixasComCobertura` | erro se cobertura insuficiente; v1.2 |
 | Overlap das faixas | `3%` (`0.03`) | `cortarEmFaixas` | cobre fronteira sem duplicar demais |
 | `max_tokens` (single) | `16000` | `_extrairDePdf` | resposta cabe |
 | `max_tokens` (multi/faixa) | `16000` | `_extrairDeImagem` | resposta por faixa cabe |
@@ -220,7 +223,7 @@ A tela de revisão (`/mapeamento/[id]`) é parte do contrato: o pipeline entrega
 Antes de mergear qualquer feature nova, confirme que nada abaixo mudou:
 
 1. `npx tsc --noEmit` sem erros.
-2. `src/lib/ai-lancamentos.ts` inalterado (assinaturas, prompts e parâmetros da seção 6).
+2. `src/lib/ai-lancamentos.ts` conforme parâmetros da seção 6 (v1.2).
 3. Reprocessar os 3 PDFs de referência e conferir:
    - **Metropolitan** (single): 4–5 tipologias, sem KITs, valores corretos.
    - **Tibério** (multi): construtora "Tibério", empreendimentos com bairro/entrega.
@@ -241,3 +244,9 @@ Se algum desses regredir, a alteração que causou isso deve ser revertida.
   consolidar `valor_minimo`/`valor_maximo` com chave normalizada; (d) `unidades`
   nunca recebe o número do apartamento; (e) overlap das faixas 6% → 3%. Validado
   em Danti (todos os empreendimentos, incl. Vista Brooklin) e Cyrela (sem regressão).
+- **v1.2** — Fidelidade + anti-duplicata (decisão explícita do dono). Mudanças:
+  (a) `temperature: 0`; (b) até 3 retentativas por faixa/PDF em resposta vazia ou
+  truncada; (c) `extrairFaixasComCobertura` — segunda passagem nas faixas vazias
+  e erro se >15% das faixas falharem; (d) `numFaixasPorDocumento` usa nº de
+  páginas (determinístico) em single e multi; (e) `content_hash` SHA-256 no upload
+  com HTTP 409 para PDF já enviado.

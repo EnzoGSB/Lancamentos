@@ -2,6 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Lancamento } from './types'
 import { removerSufixoLixoTipologia } from './formatar-lancamento'
 import {
+  isBuscaTipologiaComercial,
+  matchesConsultaTexto,
+} from './busca-texto'
+import {
   matchesFiltroAndar,
   padroesAndarSqlOr,
 } from './andar-unidade'
@@ -60,7 +64,7 @@ export type ResultadoBusca = {
   usou_busca_similar: boolean
 }
 
-const TOLERANCIA_METRAGEM_SUPERIOR = 1
+const TOLERANCIA_METRAGEM_PERCENT = 0.05
 
 function escapeIlike(value: string) {
   return value.replace(/[%_\\]/g, '\\$&')
@@ -164,7 +168,7 @@ function matchesMetragem(
   l: Lancamento,
   min: number | null | undefined,
   max: number | null | undefined,
-  toleranciaSuperior: number
+  percentTolerance: number
 ): boolean {
   if (min == null && max == null) return true
   const item = parseMetragemM2(l.metragem)
@@ -172,8 +176,14 @@ function matchesMetragem(
 
   const iMin = item.min ?? item.max!
   const iMax = item.max ?? item.min!
-  const fMin = min ?? 0
-  const fMax = max != null ? max + toleranciaSuperior : Infinity
+
+  let fMin = min ?? 0
+  let fMax = max ?? Infinity
+
+  if (percentTolerance > 0) {
+    if (min != null) fMin = min * (1 - percentTolerance)
+    if (max != null) fMax = max * (1 + percentTolerance)
+  }
 
   return iMax >= fMin && iMin <= fMax
 }
@@ -244,25 +254,28 @@ function matchesCampoParcial(val: string | null | undefined, termos: string[] | 
   return termos.some(t => lower.includes(t.toLowerCase()))
 }
 
-function matchesTermos(l: Lancamento, termos: string[] | undefined): boolean {
-  if (!termos?.length) return true
-  const texto = textoCompletoImovel(l)
-  return termos.every(t => texto.includes(t.toLowerCase()))
+function matchesTermos(l: Lancamento, filtros: Pick<FiltrosLancamentos, 'q' | 'termos'>): boolean {
+  return matchesConsultaTexto(textoCompletoImovel(l), {
+    q: filtros.q,
+    termos: filtros.termos,
+  })
 }
 
 function filtrarPosQuery(
   items: Lancamento[],
   filtros: FiltrosLancamentos,
-  toleranciaMetragem: number
+  percentToleranceMetragem: number
 ): Lancamento[] {
   return items.filter(l => {
-    if (!matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, toleranciaMetragem)) {
+    if (!matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, percentToleranceMetragem)) {
       return false
     }
 
+    const buscaComercial = isBuscaTipologiaComercial(filtros)
+
     if (filtros.condicoes_or?.length) {
       if (!filtros.condicoes_or.some(c => matchesCondicaoOr(l, c))) return false
-    } else {
+    } else if (!buscaComercial) {
       if (filtros.dormitorios_min != null && filtros.dormitorios_min > 0) {
         const d = extrairDormitorios(l.tipologia)
         if (d == null || d < filtros.dormitorios_min) return false
@@ -278,15 +291,17 @@ function filtrarPosQuery(
       if (v == null || v < filtros.vagas_min) return false
     }
 
-    if (!matchesTermos(l, filtros.termos)) return false
+    if (!matchesTermos(l, filtros)) return false
 
     if (!matchesValor(l, filtros.valor_min, filtros.valor_max)) return false
     if (!matchesCampoParcial(l.unidade, filtros.unidade)) return false
     if (!matchesFiltroAndar(l, filtros.andar)) return false
     if (!matchesCampoParcial(l.desconto_margem, filtros.desconto_contem)) return false
 
-    if (filtros.tipo_imovel === 'studio' && !isStudioImovel(l)) return false
-    if (filtros.tipo_imovel === 'apartamento' && !isApartamentoImovel(l)) return false
+    if (!buscaComercial) {
+      if (filtros.tipo_imovel === 'studio' && !isStudioImovel(l)) return false
+      if (filtros.tipo_imovel === 'apartamento' && !isApartamentoImovel(l)) return false
+    }
 
     if (!matchesFiltroEntrega(l.data_entrega, filtros)) return false
 
@@ -305,14 +320,14 @@ function scoreRelevancia(l: Lancamento, filtros: FiltrosLancamentos): number {
 
   if (filtros.metragem_min != null || filtros.metragem_max != null) {
     if (matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, 0)) score += 20
-    else if (matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, TOLERANCIA_METRAGEM_SUPERIOR)) score += 10
+    else if (matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, TOLERANCIA_METRAGEM_PERCENT)) score += 10
   }
 
   for (const t of filtros.termos ?? []) {
-    if (texto.includes(t.toLowerCase())) score += 5
+    if (matchesConsultaTexto(texto, { termos: [t] })) score += 5
   }
 
-  if (filtros.q && texto.includes(filtros.q.toLowerCase())) score += 5
+  if (filtros.q && matchesConsultaTexto(texto, { q: filtros.q })) score += 5
 
   if (l.valor_minimo != null) score += 2
   if (l.metragem) score += 2
@@ -340,6 +355,7 @@ function precisaPosFiltro(filtros: FiltrosLancamentos): boolean {
     || (filtros.unidade?.length ?? 0) > 0
     || (filtros.andar?.length ?? 0) > 0
     || (filtros.desconto_contem?.length ?? 0) > 0
+    || Boolean(filtros.q?.trim())
 }
 
 async function executarQuerySql(
@@ -413,10 +429,10 @@ async function executarQuerySql(
 function buscarEmMemoria(
   candidatos: Lancamento[],
   filtros: FiltrosLancamentos,
-  toleranciaMetragem: number,
+  percentToleranceMetragem: number,
   limit: number
 ): Lancamento[] {
-  const filtrados = filtrarPosQuery(candidatos, filtros, toleranciaMetragem)
+  const filtrados = filtrarPosQuery(candidatos, filtros, percentToleranceMetragem)
   return ordenarPorRelevancia(filtrados, filtros).slice(0, limit)
 }
 
@@ -429,41 +445,22 @@ export async function buscarLancamentos(
   const offset = Math.max(opts?.offset ?? 0, 0)
   const posFiltro = precisaPosFiltro(filtros)
   const fetchLimit = posFiltro ? Math.min(limit * 12, 1000) : limit
+  const temMetragem = filtros.metragem_min != null || filtros.metragem_max != null
 
   const candidatos = await executarQuerySql(supabase, filtros, fetchLimit, offset)
 
-  let lancamentos = buscarEmMemoria(candidatos, filtros, TOLERANCIA_METRAGEM_SUPERIOR, limit)
+  let lancamentos = buscarEmMemoria(candidatos, filtros, 0, limit)
   let usouTolerancia = false
-  let usouSimilar = false
 
-  if (lancamentos.length === 0 && posFiltro && candidatos.length > 0) {
-    lancamentos = buscarEmMemoria(candidatos, filtros, TOLERANCIA_METRAGEM_SUPERIOR + 3, limit)
-    if (lancamentos.length > 0) {
-      usouTolerancia = true
-      usouSimilar = true
-    }
+  if (lancamentos.length === 0 && temMetragem && candidatos.length > 0) {
+    lancamentos = buscarEmMemoria(candidatos, filtros, TOLERANCIA_METRAGEM_PERCENT, limit)
+    if (lancamentos.length > 0) usouTolerancia = true
   }
 
-  if (lancamentos.length === 0 && posFiltro && candidatos.length > 0) {
-    const filtrosSimilares: FiltrosLancamentos = {
-      ...filtros,
-      metragem_min: null,
-      metragem_max: null,
-      condicoes_or: undefined,
-      dormitorios_min: null,
-      suites_min: null,
-    }
-    lancamentos = ordenarPorRelevancia(
-      filtrarPosQuery(candidatos, filtrosSimilares, 0),
-      filtros
-    ).slice(0, limit)
-    if (lancamentos.length > 0) usouSimilar = true
-  }
-
-  if (lancamentos.length > 0 && filtros.metragem_max != null) {
+  if (lancamentos.length > 0 && temMetragem) {
     const algumNaTolerancia = lancamentos.some(l =>
       !matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, 0)
-      && matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, TOLERANCIA_METRAGEM_SUPERIOR)
+      && matchesMetragem(l, filtros.metragem_min, filtros.metragem_max, TOLERANCIA_METRAGEM_PERCENT)
     )
     if (algumNaTolerancia) usouTolerancia = true
   }
@@ -474,7 +471,7 @@ export async function buscarLancamentos(
     limit,
     offset,
     usou_tolerancia_metragem: usouTolerancia,
-    usou_busca_similar: usouSimilar,
+    usou_busca_similar: false,
   }
 }
 

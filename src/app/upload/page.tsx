@@ -6,15 +6,22 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 
+type DuplicateInfo = {
+  id: string
+  message: string
+}
+
 export default function UploadPage() {
   const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [duplicateInfo, setDuplicateInfo] = useState<DuplicateInfo | null>(null)
 
   const handleUpload = useCallback(async () => {
     if (!file) { toast.error('Selecione um arquivo PDF'); return }
 
     setUploading(true)
+    setDuplicateInfo(null)
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -25,6 +32,9 @@ export default function UploadPage() {
       if (res.ok) {
         toast.success('Upload realizado! Processando com IA...')
         router.push(`/mapeamento/${data.id}`)
+      } else if (res.status === 409 && data.duplicate && data.existing?.id) {
+        setDuplicateInfo({ id: data.existing.id, message: data.error })
+        toast.error('Este PDF já foi enviado')
       } else {
         toast.error(data.error || 'Erro no upload')
       }
@@ -91,6 +101,29 @@ export default function UploadPage() {
           />
         </CardContent>
       </Card>
+
+      {duplicateInfo && (
+        <Card className="mb-6 border-amber-200 bg-amber-50">
+          <CardHeader>
+            <CardTitle className="text-base text-amber-900">PDF duplicado</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-amber-900">{duplicateInfo.message}</p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => router.push(`/mapeamento/${duplicateInfo.id}`)}
+              >
+                Abrir processamento existente
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => router.push('/dashboard')}>
+                Ir ao Dashboard
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Button
         onClick={handleUpload}

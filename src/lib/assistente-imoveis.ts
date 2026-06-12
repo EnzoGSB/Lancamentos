@@ -6,6 +6,10 @@ import {
   limparFiltrosEntrega,
   mesclarFiltrosEntrega,
 } from './entrega-query'
+import {
+  corrigirTermosBusca,
+  extrairHeuristicaComercial,
+} from './busca-texto'
 import type { Lancamento } from './types'
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
@@ -99,7 +103,8 @@ function limparFiltros(raw: Record<string, unknown>): FiltrosInterpretados {
   if (q) filtros.q = q
 
   const termos = arr(raw.termos)
-  if (termos) filtros.termos = termos
+  if (termos) filtros.termos = corrigirTermosBusca(termos)
+  if (filtros.q) filtros.q = corrigirTermosBusca([filtros.q])[0]
 
   const construtora = arr(raw.construtora)
   const empreendimento = arr(raw.empreendimento)
@@ -162,8 +167,31 @@ function limparFiltros(raw: Record<string, unknown>): FiltrosInterpretados {
 }
 
 function aplicarHeuristicas(message: string, filtros: FiltrosInterpretados): FiltrosInterpretados {
+  const comercial = extrairHeuristicaComercial(message)
+  let next: FiltrosInterpretados = { ...filtros }
+
+  if (comercial) {
+    if (comercial.limparTipoImovel) {
+      delete next.tipo_imovel
+      delete next.dormitorios_min
+      delete next.suites_min
+    }
+    if (comercial.termos?.length) {
+      next.termos = [...new Set([...(next.termos ?? []), ...comercial.termos])]
+    }
+    if (next.q) {
+      const qLimpa = next.q
+        .replace(/\blaje\s+coorporativa\b/gi, 'laje')
+        .replace(/\blaje\s+corporativa\b/gi, 'laje')
+        .replace(/\bcoorporativa\b/gi, 'corporativa')
+        .trim()
+      if (qLimpa) next.q = qLimpa
+      else delete next.q
+    }
+  }
+
   const entregaHeuristica = extrairEntregaDaMensagem(message)
-  let next: FiltrosInterpretados = { ...filtros, ...mesclarFiltrosEntrega(filtros, entregaHeuristica) }
+  next = { ...next, ...mesclarFiltrosEntrega(next, entregaHeuristica) }
 
   if (entregaHeuristica.entrega_pronta) {
     if (next.q) {
@@ -228,15 +256,18 @@ Entenda a intenção, identifique filtros explícitos e implícitos, aplique mar
 A busca não deve ser excessivamente rígida, mas também não traga imóveis sem relação com o pedido.
 
 ## Metragem (valores numéricos em m², sem sufixo)
-- "Entre 21 e 28 metros" → metragem_min: 21, metragem_max: 28 (o sistema aplica +1 m² de tolerância no limite superior automaticamente).
+- "Entre 21 e 28 metros" → metragem_min: 21, metragem_max: 28 (o sistema aceita no máximo ±5% fora dessa faixa).
+- "88 metros quadrados" → metragem_min: 88, metragem_max: 88 (aceita ~83,6–92,4 m²).
 - "Até 70 metros" → metragem_max: 70
 - "A partir de 100 metros" → metragem_min: 100
 - "De 40 a 50 metros" → metragem_min: 40, metragem_max: 50
+- Se não houver imóvel na faixa (nem com ±5%), a busca retorna vazio — nunca ignore a metragem pedida.
 
 ## Apartamento vs Studio (regra do catálogo)
 - **Apartamento** (apê, apartamento, aparta): imóvel com **2 quartos/dormitórios ou mais**. Use tipo_imovel: "apartamento" e dormitorios_min: 2 (ou mais se o usuário pedir).
 - **Studio**: imóvel com **0 ou 1 quarto/dormitório**, ou tipologia "Studio". Use tipo_imovel: "studio".
-- "unidade" ou "imóvel" genérico **sem** especificar apartamento/studio → não use tipo_imovel.
+- **Laje / sala comercial / corporativa**: tipologia comercial — use termos: ["laje"] ou q: "laje corporativa". **Não** use tipo_imovel apartamento/studio nem dormitorios_min.
+- "unidade" ou "imóvel" genérico **sem** especificar apartamento/studio/laje → não use tipo_imovel.
 
 ## Dormitórios, suítes e tipologia com OR
 Quando o usuário usar "ou" entre alternativas, use condicoes_or (cada item é uma condição alternativa — o imóvel precisa atender UMA delas):
@@ -258,6 +289,7 @@ Quando critérios forem obrigatórios juntos (sem "ou"), use os campos diretos (
 - dorm, dormitório, quarto, quartos → dormitorios_min
 - vaga, vagas, garagem → vagas_min
 - duplex → termos: ["duplex"] ou exige_duplex: true
+- laje, laje corporativa, laje comercial, sala comercial → termos: ["laje"] (aceita também "Laje Comercial" no catálogo; corrige "coorporativa")
 
 ## Busca por referência parcial
 Para características como "duplex", "studio", "cobertura", use termos: ["duplex"] — o sistema busca em tipologia, empreendimento, unidade, andar, desconto e demais campos.

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -8,10 +8,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import type { ProcessamentoLancamento } from '@/lib/types'
+import type { AnaliseIA, ProcessamentoLancamento } from '@/lib/types'
 
 type ProcessamentoComContagem = ProcessamentoLancamento & {
   empreendimentos_inseridos?: number | null
+}
+
+const CONSTRUTORA_NAO_IDENTIFICADA = 'A identificar'
+
+function getConstrutora(p: ProcessamentoComContagem): string {
+  const analise = p.analise_ia as AnaliseIA | null
+  const nome = analise?.construtora?.trim()
+  return nome || CONSTRUTORA_NAO_IDENTIFICADA
+}
+
+function ordenarConstrutoras(a: string, b: string): number {
+  if (a === CONSTRUTORA_NAO_IDENTIFICADA) return 1
+  if (b === CONSTRUTORA_NAO_IDENTIFICADA) return -1
+  return a.localeCompare(b, 'pt-BR')
 }
 
 const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -31,12 +45,137 @@ function emProgresso(status: string) {
   return (STATUS_EM_PROGRESSO as readonly string[]).includes(status)
 }
 
+function ProcessamentoRow({
+  p,
+  deletingId,
+  onDelete,
+  showConstrutoraBadge = false,
+}: {
+  p: ProcessamentoComContagem
+  deletingId: string | null
+  onDelete: (p: ProcessamentoComContagem) => void
+  showConstrutoraBadge?: boolean
+}) {
+  const statusInfo = STATUS_LABELS[p.status] ?? { label: p.status, variant: 'secondary' as const }
+  const construtora = getConstrutora(p)
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 py-4">
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          <p className="text-base font-medium text-gray-900 truncate">
+            {p.original_filename || 'Arquivo sem nome'}
+          </p>
+          {showConstrutoraBadge && (
+            <Badge variant="outline" className="shrink-0 font-normal">
+              {construtora}
+            </Badge>
+          )}
+        </div>
+        <p className="text-sm text-gray-500">
+          {construtora === CONSTRUTORA_NAO_IDENTIFICADA && (
+            <>
+              {p.tipo === 'multi' ? 'Multi-empreendimento' : p.tipo === 'single' ? 'Empreendimento único' : 'Aguardando identificação pela IA'}
+              {p.created_at && ' • '}
+            </>
+          )}
+          {construtora !== CONSTRUTORA_NAO_IDENTIFICADA && !showConstrutoraBadge && (
+            <>
+              <span className="font-medium text-gray-700">{construtora}</span>
+              {p.created_at && ' • '}
+            </>
+          )}
+          {p.created_at && new Date(p.created_at).toLocaleString('pt-BR')}
+        </p>
+        {p.status === 'concluido' && p.resultado && (
+          <div className="mt-1 space-y-0.5">
+            {p.empreendimentos_inseridos != null && (
+              <p className="text-sm text-green-600">
+                {p.empreendimentos_inseridos}{' '}
+                {p.empreendimentos_inseridos === 1 ? 'empreendimento' : 'empreendimentos'}
+              </p>
+            )}
+            <p className="text-sm text-green-600">
+              {(p.resultado as { inseridos: number }).inseridos} lançamentos inseridos
+            </p>
+          </div>
+        )}
+        {p.erro && <p className="text-sm text-red-500 mt-1">{p.erro}</p>}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 sm:ml-4 shrink-0">
+        <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+        {p.status === 'aguardando_confirmacao' && (
+          <Link
+            href={`/mapeamento/${p.id}`}
+            className="text-sm px-4 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Revisar
+          </Link>
+        )}
+        {p.status === 'concluido' && (
+          <Link
+            href={`/preview/${p.id}`}
+            className="text-sm px-4 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+          >
+            Ver dados
+          </Link>
+        )}
+        {p.status === 'pendente' && (
+          <Link
+            href={`/mapeamento/${p.id}`}
+            className="text-sm px-4 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-800"
+          >
+            Processar
+          </Link>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="text-gray-400 hover:text-red-600 hover:bg-red-50"
+          disabled={deletingId === p.id}
+          onClick={() => onDelete(p)}
+          title="Apagar processamento"
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const [processamentos, setProcessamentos] = useState<ProcessamentoComContagem[]>([])
   const [loading, setLoading] = useState(true)
   const [totalLancamentos, setTotalLancamentos] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ProcessamentoLancamento | null>(null)
+  const [filtroConstrutora, setFiltroConstrutora] = useState<string | null>(null)
+
+  const construtorasComContagem = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const p of processamentos) {
+      const c = getConstrutora(p)
+      map.set(c, (map.get(c) ?? 0) + 1)
+    }
+    return [...map.entries()].sort(([a], [b]) => ordenarConstrutoras(a, b))
+  }, [processamentos])
+
+  const processamentosFiltrados = useMemo(() => {
+    if (!filtroConstrutora) return processamentos
+    return processamentos.filter(p => getConstrutora(p) === filtroConstrutora)
+  }, [processamentos, filtroConstrutora])
+
+  const gruposPorConstrutora = useMemo(() => {
+    if (filtroConstrutora) return null
+    const map = new Map<string, ProcessamentoComContagem[]>()
+    for (const p of processamentos) {
+      const c = getConstrutora(p)
+      if (!map.has(c)) map.set(c, [])
+      map.get(c)!.push(p)
+    }
+    return [...map.entries()].sort(([a], [b]) => ordenarConstrutoras(a, b))
+  }, [processamentos, filtroConstrutora])
 
   const refreshCount = useCallback(() => {
     fetch('/api/lancamentos/count')
@@ -160,85 +299,85 @@ export default function DashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Histórico de Processamentos</CardTitle>
+          <div className="flex flex-col gap-3">
+            <CardTitle className="text-lg">Histórico de Processamentos</CardTitle>
+            {processamentos.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm text-gray-500">Filtrar por construtora</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFiltroConstrutora(null)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                      filtroConstrutora === null
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Todas ({processamentos.length})
+                  </button>
+                  {construtorasComContagem.map(([nome, count]) => (
+                    <button
+                      key={nome}
+                      type="button"
+                      onClick={() => setFiltroConstrutora(nome)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                        filtroConstrutora === nome
+                          ? 'bg-gray-900 text-white'
+                          : nome === CONSTRUTORA_NAO_IDENTIFICADA
+                            ? 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {nome} ({count})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="text-gray-500 text-base">Carregando...</p>
           ) : processamentos.length === 0 ? (
             <p className="text-gray-500 text-base">Nenhum processamento ainda. Comece enviando um PDF!</p>
+          ) : processamentosFiltrados.length === 0 ? (
+            <p className="text-gray-500 text-base">Nenhum PDF para esta construtora.</p>
+          ) : gruposPorConstrutora ? (
+            <div className="space-y-6">
+              {gruposPorConstrutora.map(([construtora, items]) => (
+                <section key={construtora}>
+                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-gray-200 mb-1">
+                    <h3 className="text-base font-semibold text-gray-900">{construtora}</h3>
+                    <span className="text-sm text-gray-500">
+                      {items.length} {items.length === 1 ? 'PDF' : 'PDFs'}
+                    </span>
+                  </div>
+                  <div className="divide-y">
+                    {items.map(p => (
+                      <ProcessamentoRow
+                        key={p.id}
+                        p={p}
+                        deletingId={deletingId}
+                        onDelete={setDeleteTarget}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
           ) : (
             <div className="divide-y">
-              {processamentos.map((p) => {
-                const statusInfo = STATUS_LABELS[p.status] ?? { label: p.status, variant: 'secondary' as const }
-                const analise = p.analise_ia as { construtora?: string; tipo?: string } | null
-
-                return (
-                  <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 py-4">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-base font-medium text-gray-900 truncate">
-                        {p.original_filename || 'Arquivo sem nome'}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {analise?.construtora ?? (p.tipo === 'multi' ? 'Multi-empreendimento' : p.tipo === 'single' ? 'Empreendimento único' : '—')}
-                        {p.created_at && ` • ${new Date(p.created_at).toLocaleString('pt-BR')}`}
-                      </p>
-                      {p.status === 'concluido' && p.resultado && (
-                        <div className="mt-1 space-y-0.5">
-                          {p.empreendimentos_inseridos != null && (
-                            <p className="text-sm text-green-600">
-                              {p.empreendimentos_inseridos}{' '}
-                              {p.empreendimentos_inseridos === 1 ? 'empreendimento' : 'empreendimentos'}
-                            </p>
-                          )}
-                          <p className="text-sm text-green-600">
-                            {(p.resultado as { inseridos: number }).inseridos} lançamentos inseridos
-                          </p>
-                        </div>
-                      )}
-                      {p.erro && <p className="text-sm text-red-500 mt-1">{p.erro}</p>}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 sm:ml-4 shrink-0">
-                      <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                      {p.status === 'aguardando_confirmacao' && (
-                        <Link
-                          href={`/mapeamento/${p.id}`}
-                          className="text-sm px-4 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700"
-                        >
-                          Revisar
-                        </Link>
-                      )}
-                      {p.status === 'concluido' && (
-                        <Link
-                          href={`/preview/${p.id}`}
-                          className="text-sm px-4 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                        >
-                          Ver dados
-                        </Link>
-                      )}
-                      {p.status === 'pendente' && (
-                        <Link
-                          href={`/mapeamento/${p.id}`}
-                          className="text-sm px-4 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-800"
-                        >
-                          Processar
-                        </Link>
-                      )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-gray-400 hover:text-red-600 hover:bg-red-50"
-                        disabled={deletingId === p.id}
-                        onClick={() => setDeleteTarget(p)}
-                        title="Apagar processamento"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })}
+              {processamentosFiltrados.map(p => (
+                <ProcessamentoRow
+                  key={p.id}
+                  p={p}
+                  deletingId={deletingId}
+                  onDelete={setDeleteTarget}
+                  showConstrutoraBadge
+                />
+              ))}
             </div>
           )}
         </CardContent>
