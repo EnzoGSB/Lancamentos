@@ -192,7 +192,7 @@ function MultiSelectFiltro({
           role="combobox"
           aria-expanded={open}
           aria-autocomplete="list"
-          placeholder="Todos — digite para filtrar"
+          placeholder="Digite para filtrar"
           value={valorInput}
           onChange={e => {
             setBuscaLocal(e.target.value)
