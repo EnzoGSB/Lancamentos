@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { Trash2 } from 'lucide-react'
+import { Building2, ChevronDown, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -49,42 +49,25 @@ function ProcessamentoRow({
   p,
   deletingId,
   onDelete,
-  showConstrutoraBadge = false,
+  compact = false,
 }: {
   p: ProcessamentoComContagem
   deletingId: string | null
   onDelete: (p: ProcessamentoComContagem) => void
-  showConstrutoraBadge?: boolean
+  compact?: boolean
 }) {
   const statusInfo = STATUS_LABELS[p.status] ?? { label: p.status, variant: 'secondary' as const }
-  const construtora = getConstrutora(p)
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 py-4">
       <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-center gap-2 mb-1">
-          <p className="text-base font-medium text-gray-900 truncate">
-            {p.original_filename || 'Arquivo sem nome'}
-          </p>
-          {showConstrutoraBadge && (
-            <Badge variant="outline" className="shrink-0 font-normal">
-              {construtora}
-            </Badge>
-          )}
-        </div>
-        <p className="text-sm text-gray-500">
-          {construtora === CONSTRUTORA_NAO_IDENTIFICADA && (
-            <>
-              {p.tipo === 'multi' ? 'Multi-empreendimento' : p.tipo === 'single' ? 'Empreendimento único' : 'Aguardando identificação pela IA'}
-              {p.created_at && ' • '}
-            </>
-          )}
-          {construtora !== CONSTRUTORA_NAO_IDENTIFICADA && !showConstrutoraBadge && (
-            <>
-              <span className="font-medium text-gray-700">{construtora}</span>
-              {p.created_at && ' • '}
-            </>
-          )}
+        <p className="text-base font-medium text-gray-900 truncate">
+          {p.original_filename || 'Arquivo sem nome'}
+        </p>
+        <p className="text-sm text-gray-500 mt-0.5">
+          {compact && p.tipo === 'multi' && 'Multi-empreendimento • '}
+          {compact && p.tipo === 'single' && 'Empreendimento único • '}
+          {compact && !p.tipo && 'Aguardando identificação • '}
           {p.created_at && new Date(p.created_at).toLocaleString('pt-BR')}
         </p>
         {p.status === 'concluido' && p.resultado && (
@@ -144,6 +127,101 @@ function ProcessamentoRow({
   )
 }
 
+function resumoStatus(items: ProcessamentoComContagem[]) {
+  const concluidos = items.filter(p => p.status === 'concluido').length
+  const revisao = items.filter(p => p.status === 'aguardando_confirmacao').length
+  const pendentes = items.filter(p => p.status === 'pendente').length
+  return { concluidos, revisao, pendentes }
+}
+
+function ConstrutoraBloco({
+  construtora,
+  items,
+  aberta,
+  onToggle,
+  deletingId,
+  onDelete,
+}: {
+  construtora: string
+  items: ProcessamentoComContagem[]
+  aberta: boolean
+  onToggle: () => void
+  deletingId: string | null
+  onDelete: (p: ProcessamentoComContagem) => void
+}) {
+  const naoIdentificada = construtora === CONSTRUTORA_NAO_IDENTIFICADA
+  const { concluidos, revisao, pendentes } = resumoStatus(items)
+
+  return (
+    <div
+      className={`rounded-xl border overflow-hidden transition-shadow ${
+        naoIdentificada
+          ? 'border-amber-200 bg-amber-50/40'
+          : 'border-gray-200 bg-white shadow-sm hover:shadow-md'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={aberta}
+        className={`w-full flex items-start sm:items-center gap-3 px-4 py-4 sm:px-5 text-left transition-colors ${
+          naoIdentificada ? 'hover:bg-amber-50' : 'hover:bg-gray-50'
+        }`}
+      >
+        <ChevronDown
+          className={`size-5 shrink-0 text-gray-500 mt-0.5 sm:mt-0 transition-transform duration-200 ${
+            aberta ? '' : '-rotate-90'
+          }`}
+        />
+        <div
+          className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${
+            naoIdentificada ? 'bg-amber-100 text-amber-800' : 'bg-gray-900 text-white'
+          }`}
+        >
+          <Building2 className="size-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-lg sm:text-xl font-bold text-gray-900">{construtora}</span>
+            <Badge
+              variant={naoIdentificada ? 'outline' : 'secondary'}
+              className="text-xs sm:text-sm font-semibold px-2.5"
+            >
+              {items.length} {items.length === 1 ? 'PDF' : 'PDFs'}
+            </Badge>
+          </div>
+          {!aberta && (
+            <p className="text-sm text-gray-500 mt-1 truncate">
+              {items.slice(0, 2).map(i => i.original_filename || 'Sem nome').join(' · ')}
+              {items.length > 2 && ` · +${items.length - 2}`}
+            </p>
+          )}
+          {aberta && (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs sm:text-sm text-gray-500">
+              {concluidos > 0 && <span className="text-green-600 font-medium">{concluidos} concluído{concluidos !== 1 ? 's' : ''}</span>}
+              {revisao > 0 && <span className="text-blue-600 font-medium">{revisao} em revisão</span>}
+              {pendentes > 0 && <span>{pendentes} pendente{pendentes !== 1 ? 's' : ''}</span>}
+            </div>
+          )}
+        </div>
+      </button>
+      {aberta && (
+        <div className={`border-t divide-y ${naoIdentificada ? 'border-amber-200/80 bg-white/60' : 'border-gray-100 bg-gray-50/50'} px-4 sm:px-5`}>
+          {items.map(p => (
+            <ProcessamentoRow
+              key={p.id}
+              p={p}
+              deletingId={deletingId}
+              onDelete={onDelete}
+              compact
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const [processamentos, setProcessamentos] = useState<ProcessamentoComContagem[]>([])
   const [loading, setLoading] = useState(true)
@@ -151,6 +229,38 @@ export default function DashboardPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ProcessamentoLancamento | null>(null)
   const [filtroConstrutora, setFiltroConstrutora] = useState<string | null>(null)
+  const [recolhidas, setRecolhidas] = useState<Set<string>>(new Set())
+
+  const toggleRecolhida = useCallback((construtora: string) => {
+    setRecolhidas(prev => {
+      const next = new Set(prev)
+      if (next.has(construtora)) next.delete(construtora)
+      else next.add(construtora)
+      return next
+    })
+  }, [])
+
+  const gruposVisiveis = useMemo(() => {
+    if (filtroConstrutora) {
+      const items = processamentos.filter(p => getConstrutora(p) === filtroConstrutora)
+      return items.length ? [[filtroConstrutora, items] as const] : []
+    }
+    const map = new Map<string, ProcessamentoComContagem[]>()
+    for (const p of processamentos) {
+      const c = getConstrutora(p)
+      if (!map.has(c)) map.set(c, [])
+      map.get(c)!.push(p)
+    }
+    return [...map.entries()].sort(([a], [b]) => ordenarConstrutoras(a, b))
+  }, [processamentos, filtroConstrutora])
+
+  const recolherTodas = useCallback(() => {
+    setRecolhidas(new Set(gruposVisiveis.map(([c]) => c)))
+  }, [gruposVisiveis])
+
+  const expandirTodas = useCallback(() => {
+    setRecolhidas(new Set())
+  }, [])
 
   const construtorasComContagem = useMemo(() => {
     const map = new Map<string, number>()
@@ -160,22 +270,6 @@ export default function DashboardPage() {
     }
     return [...map.entries()].sort(([a], [b]) => ordenarConstrutoras(a, b))
   }, [processamentos])
-
-  const processamentosFiltrados = useMemo(() => {
-    if (!filtroConstrutora) return processamentos
-    return processamentos.filter(p => getConstrutora(p) === filtroConstrutora)
-  }, [processamentos, filtroConstrutora])
-
-  const gruposPorConstrutora = useMemo(() => {
-    if (filtroConstrutora) return null
-    const map = new Map<string, ProcessamentoComContagem[]>()
-    for (const p of processamentos) {
-      const c = getConstrutora(p)
-      if (!map.has(c)) map.set(c, [])
-      map.get(c)!.push(p)
-    }
-    return [...map.entries()].sort(([a], [b]) => ordenarConstrutoras(a, b))
-  }, [processamentos, filtroConstrutora])
 
   const refreshCount = useCallback(() => {
     fetch('/api/lancamentos/count')
@@ -300,7 +394,19 @@ export default function DashboardPage() {
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3">
-            <CardTitle className="text-lg">Histórico de Processamentos</CardTitle>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <CardTitle className="text-lg">Histórico de Processamentos</CardTitle>
+              {gruposVisiveis.length > 1 && (
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={expandirTodas}>
+                    Expandir todas
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={recolherTodas}>
+                    Recolher todas
+                  </Button>
+                </div>
+              )}
+            </div>
             {processamentos.length > 0 && (
               <div className="flex flex-col gap-2">
                 <p className="text-sm text-gray-500">Filtrar por construtora</p>
@@ -342,40 +448,19 @@ export default function DashboardPage() {
             <p className="text-gray-500 text-base">Carregando...</p>
           ) : processamentos.length === 0 ? (
             <p className="text-gray-500 text-base">Nenhum processamento ainda. Comece enviando um PDF!</p>
-          ) : processamentosFiltrados.length === 0 ? (
+          ) : gruposVisiveis.length === 0 ? (
             <p className="text-gray-500 text-base">Nenhum PDF para esta construtora.</p>
-          ) : gruposPorConstrutora ? (
-            <div className="space-y-6">
-              {gruposPorConstrutora.map(([construtora, items]) => (
-                <section key={construtora}>
-                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-gray-200 mb-1">
-                    <h3 className="text-base font-semibold text-gray-900">{construtora}</h3>
-                    <span className="text-sm text-gray-500">
-                      {items.length} {items.length === 1 ? 'PDF' : 'PDFs'}
-                    </span>
-                  </div>
-                  <div className="divide-y">
-                    {items.map(p => (
-                      <ProcessamentoRow
-                        key={p.id}
-                        p={p}
-                        deletingId={deletingId}
-                        onDelete={setDeleteTarget}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
           ) : (
-            <div className="divide-y">
-              {processamentosFiltrados.map(p => (
-                <ProcessamentoRow
-                  key={p.id}
-                  p={p}
+            <div className="space-y-4">
+              {gruposVisiveis.map(([construtora, items]) => (
+                <ConstrutoraBloco
+                  key={construtora}
+                  construtora={construtora}
+                  items={items}
+                  aberta={!recolhidas.has(construtora)}
+                  onToggle={() => toggleRecolhida(construtora)}
                   deletingId={deletingId}
                   onDelete={setDeleteTarget}
-                  showConstrutoraBadge
                 />
               ))}
             </div>

@@ -216,8 +216,10 @@ function aplicarHeuristicas(message: string, filtros: FiltrosInterpretados): Fil
     || entregaHeuristica.entrega_ate_ano != null || entregaHeuristica.entrega_de_ano != null) {
     if (next.q) {
       let qLimpa = next.q
+        .replace(/\bprontos?\s+(?:para\s+morar\s+)?ate\s+\d{4}/gi, '')
         .replace(/\bentrega\s+(?:em|para|até|ate|a\s+partir\s+de)\s+[^,]+/gi, '')
         .replace(/\bate\s+(?:entrega\s+)?(?:de\s+)?[a-z]{3,9}[/.-]\d{2,4}/gi, '')
+        .replace(/\bate\s+\d{4}\b/gi, '')
         .replace(/\b(?:em|para)\s+\d{4}\b/gi, '')
         .trim()
       if (qLimpa) next.q = qLimpa
@@ -312,7 +314,8 @@ Use nomes do catálogo fornecido quando possível. Casamento aproximado é permi
 ## Entrega / imóvel pronto / datas de entrega
 No catálogo, data_entrega usa formatos como "Pronto", "Mai/2027", "Out/2028", "06/2026".
 
-- "pronto", "prontos", "prontos para morar", "entrega imediata", "lançamentos prontos" → **entrega_pronta: true**
+- "pronto", "prontos", "prontos para morar", "entrega imediata" (sem prazo) → **entrega_pronta: true**
+- "prontos até 2029" / "prontos para morar até 2028" → **entrega_ate_ano: 2029** (NÃO use entrega_pronta junto — inclui imóveis Pronto e entregas até dez/2029)
 - "entrega em 2027" / "entregue em 2027" → **entrega_ano: 2027** (qualquer mês daquele ano)
 - "entrega em maio/2027" / "Mai/2027" → **entrega_mes: 5, entrega_ano: 2027** (meses: jan=1 … dez=12)
 - "entrega até maio/2027" / "até 2028" → **entrega_ate_mes** e **entrega_ate_ano** (inclui "Pronto" como entrega mais cedo)

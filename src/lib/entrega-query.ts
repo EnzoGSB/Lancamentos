@@ -110,17 +110,30 @@ export function matchesFiltroEntrega(
     }
   }
 
-  if (filtros.entrega_pronta) {
-    if (!isEntregaPronta(dataEntrega)) return false
-  }
-
   const temFiltroData = filtros.entrega_mes != null
     || filtros.entrega_ano != null
     || filtros.entrega_ate_ano != null
     || filtros.entrega_de_ano != null
 
+  // "prontos até 2029" = prontos OU entrega até o limite (não exclusivo)
+  if (filtros.entrega_pronta && temFiltroData) {
+    if (isEntregaPronta(dataEntrega)) return true
+    return avaliaFiltroDataEntrega(parsed, filtros)
+  }
+
+  if (filtros.entrega_pronta) {
+    return isEntregaPronta(dataEntrega)
+  }
+
   if (!temFiltroData) return true
 
+  return avaliaFiltroDataEntrega(parsed, filtros)
+}
+
+function avaliaFiltroDataEntrega(
+  parsed: DataEntregaParsed,
+  filtros: FiltrosEntrega
+): boolean {
   if (parsed === 'pronto') {
     if (filtros.entrega_ate_ano != null) return true
     return false
@@ -156,7 +169,16 @@ export function isImovelPronto(l: Lancamento): boolean {
 export function padroesEntregaSql(filtros: FiltrosEntrega): string[] {
   const padroes: string[] = []
 
-  if (filtros.entrega_pronta) padroes.push('%pronto%')
+  if (filtros.entrega_pronta && filtros.entrega_ate_ano == null && filtros.entrega_de_ano == null) {
+    padroes.push('%pronto%')
+  }
+
+  if (filtros.entrega_ate_ano != null) {
+    padroes.push('%pronto%')
+    for (let y = 2000; y <= filtros.entrega_ate_ano; y++) {
+      padroes.push(`%${y}%`)
+    }
+  }
 
   if (filtros.entrega_ano != null) {
     padroes.push(`%/${filtros.entrega_ano}%`)
@@ -183,12 +205,11 @@ export function extrairEntregaDaMensagem(message: string): FiltrosEntrega {
   const m = message.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
   const out: FiltrosEntrega = {}
 
-  const pedePronto =
-    /\bprontos?\s+para\s+morar\b/.test(m)
-    || (/\bprontos?\b/.test(m) && /\b(lancamentos?|imoveis?|unidades?|entrega)\b/.test(m))
-    || (message.trim().length <= 48 && /\bprontos?\b/.test(m))
-
-  if (pedePronto) out.entrega_pronta = true
+  const prontoAteAno = m.match(/\bprontos?\s+ate\s+(?:(?:entrega\s+)?(?:de\s+)?)?(\d{4})\b/)
+  if (prontoAteAno) {
+    const ano = normalizarAno(parseInt(prontoAteAno[1], 10))
+    if (ano) out.entrega_ate_ano = ano
+  }
 
   const ateMesAno = m.match(/\bate\s+(?:entrega\s+)?(?:de\s+)?([a-z]{3,9}|\d{1,2})[/.-](\d{2,4})\b/)
   if (ateMesAno) {
@@ -242,6 +263,21 @@ export function extrairEntregaDaMensagem(message: string): FiltrosEntrega {
     }
   }
 
+  const pedePronto =
+    /\bprontos?\s+para\s+morar\b/.test(m)
+    || (/\bprontos?\b/.test(m) && /\b(lancamentos?|imoveis?|unidades?|entrega)\b/.test(m))
+    || (message.trim().length <= 48 && /\bprontos?\b/.test(m))
+
+  const temFiltroData = out.entrega_mes != null
+    || out.entrega_ano != null
+    || out.entrega_ate_ano != null
+    || out.entrega_de_ano != null
+
+  // "pronto até 2029" → só entrega_ate_ano (já inclui Pronto); evita filtro exclusivo de prontos
+  if (pedePronto && !temFiltroData) {
+    out.entrega_pronta = true
+  }
+
   return out
 }
 
@@ -279,6 +315,11 @@ export function limparFiltrosEntrega(raw: Record<string, unknown>): FiltrosEntre
 
   const contem = arr(raw.entrega_contem)
   if (contem) filtros.entrega_contem = contem
+
+  // "pronto até ANO" → entrega_ate já inclui Pronto; entrega_pronta exclusivo excluiria datas
+  if (filtros.entrega_pronta && filtros.entrega_ate_ano != null) {
+    delete filtros.entrega_pronta
+  }
 
   return filtros
 }
