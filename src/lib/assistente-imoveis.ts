@@ -131,6 +131,14 @@ function limparFiltros(raw: Record<string, unknown>): FiltrosInterpretados {
     }
   }
 
+  const tipo = raw.tipo_imovel
+  if (tipo === 'apartamento' || tipo === 'studio') {
+    filtros.tipo_imovel = tipo
+    if (tipo === 'apartamento' && (filtros.dormitorios_min == null || filtros.dormitorios_min < 2)) {
+      filtros.dormitorios_min = 2
+    }
+  }
+
   return filtros
 }
 
@@ -161,6 +169,11 @@ A busca não deve ser excessivamente rígida, mas também não traga imóveis se
 - "A partir de 100 metros" → metragem_min: 100
 - "De 40 a 50 metros" → metragem_min: 40, metragem_max: 50
 
+## Apartamento vs Studio (regra do catálogo)
+- **Apartamento** (apê, apartamento, aparta): imóvel com **2 quartos/dormitórios ou mais**. Use tipo_imovel: "apartamento" e dormitorios_min: 2 (ou mais se o usuário pedir).
+- **Studio**: imóvel com **0 ou 1 quarto/dormitório**, ou tipologia "Studio". Use tipo_imovel: "studio".
+- "unidade" ou "imóvel" genérico **sem** especificar apartamento/studio → não use tipo_imovel.
+
 ## Dormitórios, suítes e tipologia com OR
 Quando o usuário usar "ou" entre alternativas, use condicoes_or (cada item é uma condição alternativa — o imóvel precisa atender UMA delas):
 
@@ -174,7 +187,9 @@ Quando critérios forem obrigatórios juntos (sem "ou"), use os campos diretos (
 
 ## Termos equivalentes
 - m², metros, metros quadrados, metragem, m → metragem
-- apê, apartamento, aparta, unidade, imóvel → contexto de busca
+- apê, apartamento, aparta → tipo_imovel: "apartamento" (2+ quartos)
+- studio → tipo_imovel: "studio"
+- unidade, imóvel → busca genérica (sem tipo_imovel, salvo contexto)
 - suíte, suites, suítes → suites
 - dorm, dormitório, quarto, quartos → dormitorios_min
 - vaga, vagas, garagem → vagas_min
@@ -211,6 +226,7 @@ Campo "resposta": 1-2 frases em português explicando o que foi buscado. Se apli
     "dormitorios_min": null,
     "suites_min": null,
     "vagas_min": null,
+    "tipo_imovel": null,
     "condicoes_or": null
   }
 }`

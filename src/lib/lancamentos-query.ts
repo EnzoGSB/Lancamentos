@@ -23,6 +23,7 @@ export type FiltrosLancamentos = {
   suites_min?: number | null
   vagas_min?: number | null
   condicoes_or?: CondicaoAlternativa[]
+  tipo_imovel?: 'apartamento' | 'studio' | null
 }
 
 export type OpcoesCatalogo = {
@@ -105,7 +106,28 @@ export function extrairSuites(tipologia: string | null | undefined): number | nu
 export function extrairDormitorios(tipologia: string | null | undefined): number | null {
   if (!tipologia) return null
   const m = tipologia.match(/(\d+)\s*dorms?/i) ?? tipologia.match(/(\d+)\s*dorm\.?/i)
-  return m ? parseInt(m[1], 10) : null
+  if (m) return parseInt(m[1], 10)
+  const quartos = tipologia.match(/(\d+)\s*quartos?/i)
+  if (quartos) return parseInt(quartos[1], 10)
+  return null
+}
+
+/** Studio: tipologia explícita ou 0–1 dormitório/quarto. */
+export function isStudioImovel(l: Lancamento): boolean {
+  const tip = (l.tipologia ?? '').trim()
+  if (/^studio\b/i.test(tip)) return true
+  const d = extrairDormitorios(tip)
+  return d != null && d <= 1
+}
+
+/** Apartamento: 2+ dormitórios; exclui studios. Tipologias sem contagem mas claramente multi-quarto contam. */
+export function isApartamentoImovel(l: Lancamento): boolean {
+  if (isStudioImovel(l)) return false
+  const d = extrairDormitorios(l.tipologia)
+  if (d != null && d >= 2) return true
+  const tip = l.tipologia ?? ''
+  if (tip && /\d+\s*suítes?|duplex|triplex|cobertura|penthouse|garden|loft/i.test(tip)) return true
+  return false
 }
 
 export function isDuplex(l: Lancamento): boolean {
@@ -202,6 +224,9 @@ function filtrarPosQuery(
 
     if (!matchesTermos(l, filtros.termos)) return false
 
+    if (filtros.tipo_imovel === 'studio' && !isStudioImovel(l)) return false
+    if (filtros.tipo_imovel === 'apartamento' && !isApartamentoImovel(l)) return false
+
     return true
   })
 }
@@ -245,6 +270,7 @@ function precisaPosFiltro(filtros: FiltrosLancamentos): boolean {
     || (filtros.vagas_min ?? 0) > 0
     || (filtros.condicoes_or?.length ?? 0) > 0
     || (filtros.termos?.length ?? 0) > 0
+    || filtros.tipo_imovel != null
 }
 
 async function executarQuerySql(
