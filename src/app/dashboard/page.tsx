@@ -25,6 +25,12 @@ const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secon
   erro:                   { label: 'Erro',                  variant: 'destructive' },
 }
 
+const STATUS_EM_PROGRESSO = ['extraindo', 'analisando', 'processando', 'salvando'] as const
+
+function emProgresso(status: string) {
+  return (STATUS_EM_PROGRESSO as readonly string[]).includes(status)
+}
+
 export default function DashboardPage() {
   const [processamentos, setProcessamentos] = useState<ProcessamentoComContagem[]>([])
   const [loading, setLoading] = useState(true)
@@ -39,6 +45,36 @@ export default function DashboardPage() {
       .catch(() => {})
   }, [])
 
+  const refreshProcessamentos = useCallback(async () => {
+    try {
+      const res = await fetch('/api/processamentos')
+      const data = await res.json()
+      if (!Array.isArray(data)) return
+
+      setProcessamentos(prev => {
+        let refreshCountNeeded = false
+        for (const p of data) {
+          const old = prev.find(x => x.id === p.id)
+          if (!old || old.status === p.status) continue
+
+          const nome = p.original_filename || 'PDF'
+          if (emProgresso(old.status) && p.status === 'aguardando_confirmacao') {
+            toast.success(`${nome} pronto para revisão.`)
+          } else if (old.status === 'salvando' && p.status === 'concluido') {
+            toast.success(`${nome} salvo no banco.`)
+            refreshCountNeeded = true
+          } else if (emProgresso(old.status) && p.status === 'erro') {
+            toast.error(`Erro ao processar ${nome}.`)
+          }
+        }
+        if (refreshCountNeeded) queueMicrotask(refreshCount)
+        return data
+      })
+    } catch {
+      // silencioso no polling
+    }
+  }, [refreshCount])
+
   useEffect(() => {
     fetch('/api/processamentos')
       .then(r => r.json())
@@ -48,6 +84,14 @@ export default function DashboardPage() {
 
     refreshCount()
   }, [refreshCount])
+
+  const temEmAndamento = processamentos.some(p => emProgresso(p.status))
+
+  useEffect(() => {
+    if (!temEmAndamento) return
+    const interval = setInterval(refreshProcessamentos, 3000)
+    return () => clearInterval(interval)
+  }, [temEmAndamento, refreshProcessamentos])
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return
