@@ -323,12 +323,12 @@ export function exibirCampo(
 }
 
 export const FIELD_CELL_CLASS: Partial<Record<CampoFormatavel | 'unidade' | 'valor_minimo' | 'valor_maximo', string>> = {
-  tipologia: 'min-w-[140px]',
-  unidade: 'min-w-[56px] max-w-[80px] tabular-nums text-center',
-  andar: 'min-w-[88px] whitespace-nowrap tabular-nums',
-  metragem: 'min-w-[88px] whitespace-nowrap tabular-nums text-right',
-  data_entrega: 'min-w-[80px] whitespace-nowrap',
-  vagas: 'min-w-[48px] max-w-[64px] tabular-nums text-center',
-  valor_minimo: 'text-right tabular-nums',
-  valor_maximo: 'text-right tabular-nums',
+  tipologia: 'min-w-0',
+  unidade: 'min-w-0 tabular-nums text-center',
+  andar: 'min-w-0 tabular-nums',
+  metragem: 'min-w-0 tabular-nums text-right',
+  data_entrega: 'min-w-0',
+  vagas: 'min-w-0 tabular-nums text-center',
+  valor_minimo: 'min-w-0 text-right tabular-nums',
+  valor_maximo: 'min-w-0 text-right tabular-nums',
 }

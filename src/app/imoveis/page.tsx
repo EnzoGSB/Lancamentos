@@ -6,9 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { Lancamento } from '@/lib/types'
-import { exibirCampo } from '@/lib/formatar-lancamento'
-import { VerPdfButton } from '@/components/ver-pdf-button'
 import { LancamentoMobileCard } from '@/components/lancamento-mobile-card'
+import { LancamentosTable } from '@/components/lancamentos-table'
 
 type FiltrosMulti = {
   construtora: string[]
@@ -39,10 +38,6 @@ const FILTROS_VAZIOS: Filtros = {
   tipologia: [],
   valor_min: '',
   valor_max: '',
-}
-
-function formatValor(v: number | null) {
-  return v != null ? `R$ ${v.toLocaleString('pt-BR')}` : '—'
 }
 
 function MultiSelectFiltro({
@@ -233,7 +228,7 @@ export default function ImoveisPage() {
   }
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto">
+    <div className="w-full mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-5 sm:mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Imóveis</h1>
@@ -334,37 +329,8 @@ export default function ImoveisPage() {
                   <LancamentoMobileCard key={l.id} lancamento={l} />
                 ))}
               </div>
-              <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm min-w-[900px]">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    {['Construtora', 'Empreendimento', 'Bairro', 'Entrega', 'Tipologia', 'Unidade', 'Andar', 'Metragem', 'Vagas', 'Valor Mín.', 'Valor Máx.', 'Desconto', 'PDF'].map(h => (
-                      <th key={h} className="text-left p-3 font-medium text-gray-500 whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {lancamentos.map(l => (
-                    <tr key={l.id} className="border-b hover:bg-gray-50">
-                      <td className="p-3 whitespace-nowrap font-medium">{l.construtora}</td>
-                      <td className="p-3 max-w-[240px] truncate" title={l.empreendimento}>{l.empreendimento}</td>
-                      <td className="p-3 whitespace-nowrap">{l.bairro ?? '—'}</td>
-                      <td className="p-3 whitespace-nowrap tabular-nums">{exibirCampo('data_entrega', l.data_entrega)}</td>
-                      <td className="p-3 whitespace-nowrap">{exibirCampo('tipologia', l.tipologia)}</td>
-                      <td className="p-3 whitespace-nowrap tabular-nums text-center">{l.unidade ?? '—'}</td>
-                      <td className="p-3 whitespace-nowrap tabular-nums">{exibirCampo('andar', l.andar)}</td>
-                      <td className="p-3 whitespace-nowrap tabular-nums text-right">{exibirCampo('metragem', l.metragem)}</td>
-                      <td className="p-3 whitespace-nowrap text-center">{l.vagas ?? '—'}</td>
-                      <td className="p-3 whitespace-nowrap">{formatValor(l.valor_minimo)}</td>
-                      <td className="p-3 whitespace-nowrap">{formatValor(l.valor_maximo)}</td>
-                      <td className="p-3 whitespace-nowrap">{l.desconto_margem ?? '—'}</td>
-                      <td className="p-3 whitespace-nowrap">
-                        <VerPdfButton processamentoId={l.processamento_id} size="xs" />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="hidden md:block p-1">
+                <LancamentosTable lancamentos={lancamentos} showPdf />
               </div>
             </>
           )}

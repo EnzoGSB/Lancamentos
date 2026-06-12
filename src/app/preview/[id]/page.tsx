@@ -7,8 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
 import type { Lancamento } from '@/lib/types'
-import { exibirCampo } from '@/lib/formatar-lancamento'
 import { LancamentoMobileCard } from '@/components/lancamento-mobile-card'
+import { LancamentosTable } from '@/components/lancamentos-table'
 
 export default function PreviewPage() {
   const params = useParams()
@@ -39,9 +39,6 @@ export default function PreviewPage() {
     }
     fetchData()
   }, [id])
-
-  const formatValor = (v: number | null) =>
-    v != null ? `R$ ${v.toLocaleString('pt-BR')}` : '—'
 
   return (
     <div className="w-full max-w-7xl mx-auto">
@@ -112,34 +109,8 @@ export default function PreviewPage() {
                 <LancamentoMobileCard key={l.id} lancamento={l} showPdf={false} />
               ))}
             </div>
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm min-w-[900px]">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    {['Construtora', 'Empreendimento', 'Bairro', 'Entrega', 'Tipologia', 'Unidade', 'Andar', 'Metragem', 'Vagas', 'Valor Mín.', 'Valor Máx.', 'Desconto'].map(h => (
-                      <th key={h} className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {lancamentos.map((l) => (
-                    <tr key={l.id} className="border-b hover:bg-gray-50">
-                      <td className="p-2 whitespace-nowrap font-medium">{l.construtora}</td>
-                      <td className="p-2 max-w-[200px] truncate" title={l.empreendimento}>{l.empreendimento}</td>
-                      <td className="p-2 whitespace-nowrap">{l.bairro ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap tabular-nums">{exibirCampo('data_entrega', l.data_entrega)}</td>
-                      <td className="p-2 whitespace-nowrap">{exibirCampo('tipologia', l.tipologia)}</td>
-                      <td className="p-2 whitespace-nowrap tabular-nums text-center">{l.unidade ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap tabular-nums">{exibirCampo('andar', l.andar)}</td>
-                      <td className="p-2 whitespace-nowrap tabular-nums text-right">{exibirCampo('metragem', l.metragem)}</td>
-                      <td className="p-2 whitespace-nowrap text-center">{l.vagas ?? '—'}</td>
-                      <td className="p-2 whitespace-nowrap">{formatValor(l.valor_minimo)}</td>
-                      <td className="p-2 whitespace-nowrap">{formatValor(l.valor_maximo)}</td>
-                      <td className="p-2 whitespace-nowrap">{l.desconto_margem ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="hidden md:block p-1">
+              <LancamentosTable lancamentos={lancamentos} showPdf={false} />
             </div>
           </CardContent>
         </Card>

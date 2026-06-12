@@ -49,8 +49,8 @@ type SelectedCell = { row: number; field: EditableField }
 
 const inputClass = (selected: boolean, field?: EditableField) =>
   cn(
-    'w-full text-xs border-0 rounded px-1 py-0.5 outline-none',
-    FIELD_CELL_CLASS[field as keyof typeof FIELD_CELL_CLASS] ?? 'min-w-[80px] max-w-[180px]',
+    'w-full min-w-0 text-xs border-0 rounded px-0.5 py-0.5 outline-none',
+    FIELD_CELL_CLASS[field as keyof typeof FIELD_CELL_CLASS],
     selected
       ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset'
       : 'bg-transparent hover:bg-gray-100 focus:bg-white focus:border focus:border-gray-300'
@@ -58,7 +58,7 @@ const inputClass = (selected: boolean, field?: EditableField) =>
 
 const numberInputClass = (selected: boolean, field?: 'valor_minimo' | 'valor_maximo') =>
   cn(
-    'w-24 text-xs border-0 rounded px-1 py-0.5 outline-none',
+    'w-full min-w-0 text-xs border-0 rounded px-0.5 py-0.5 outline-none',
     field ? FIELD_CELL_CLASS[field] : undefined,
     selected
       ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset'
@@ -349,31 +349,46 @@ export default function MapeamentoPage() {
               <p className="md:hidden text-xs text-gray-400 px-3 py-2 border-b bg-gray-50">
                 Deslize horizontalmente para ver todas as colunas
               </p>
-              <div className="overflow-x-auto overscroll-x-contain">
-                <table className="w-full text-xs min-w-[1100px]">
+              <div className="md:p-1 max-md:overflow-x-auto max-md:overscroll-x-contain">
+                <table className="w-full table-fixed text-xs max-md:min-w-[1100px]">
+                  <colgroup>
+                    <col style={{ width: '3%' }} />
+                    <col style={{ width: '8%' }} />
+                    <col style={{ width: '13%' }} />
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '6%' }} />
+                    <col style={{ width: '11%' }} />
+                    <col style={{ width: '5%' }} />
+                    <col style={{ width: '5%' }} />
+                    <col style={{ width: '6%' }} />
+                    <col style={{ width: '5%' }} />
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '6%' }} />
+                  </colgroup>
                   <thead>
                     <tr className="border-b bg-gray-50">
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">#</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Construtora</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Empreendimento</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Bairro</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Entrega</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Tipologia</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Unidade</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Andar</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Metragem</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Vagas</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Valor Mín.</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Valor Máx.</th>
-                      <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">Desconto</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight">#</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Construtora">Constr.</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Empreendimento">Empreed.</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Bairro">Bairro</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Entrega">Entrega</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Tipologia">Tipol.</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Unidade">Unid.</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Andar">Andar</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Metragem">m²</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Vagas">Vagas</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Valor mínimo">Mín.</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Valor máximo">Máx.</th>
+                      <th className="text-left p-1 font-medium text-gray-500 leading-tight" title="Desconto">Desc.</th>
                     </tr>
                   </thead>
                   <tbody>
                     {lancamentos.map((l, i) => (
                       <tr key={i} className="border-b hover:bg-gray-50">
-                        <td className="p-2 text-gray-400">{i + 1}</td>
+                        <td className="p-1 text-gray-400 tabular-nums">{i + 1}</td>
                         {(['construtora', 'empreendimento', 'bairro', 'data_entrega', 'tipologia', 'unidade', 'andar', 'metragem', 'vagas'] as const).map(field => (
-                          <td key={field} className="p-2">
+                          <td key={field} className="p-1 align-top">
                             <input
                               type="text"
                               inputMode={field === 'metragem' ? 'decimal' : undefined}
@@ -394,7 +409,7 @@ export default function MapeamentoPage() {
                             />
                           </td>
                         ))}
-                        <td className="p-2">
+                        <td className="p-1 align-top">
                           <input
                             type="number"
                             value={l.valor_minimo ?? ''}
@@ -403,7 +418,7 @@ export default function MapeamentoPage() {
                             className={numberInputClass(selectedCell?.row === i && selectedCell?.field === 'valor_minimo', 'valor_minimo')}
                           />
                         </td>
-                        <td className="p-2">
+                        <td className="p-1 align-top">
                           <input
                             type="number"
                             value={l.valor_maximo ?? ''}
@@ -412,7 +427,7 @@ export default function MapeamentoPage() {
                             className={numberInputClass(selectedCell?.row === i && selectedCell?.field === 'valor_maximo', 'valor_maximo')}
                           />
                         </td>
-                        <td className="p-2">
+                        <td className="p-1 align-top">
                           <input
                             type="text"
                             value={(l.desconto_margem as string) ?? ''}
