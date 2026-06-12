@@ -157,10 +157,64 @@ function capitalizarMes(mes: string) {
   return MESES[key] ?? (mes.charAt(0).toUpperCase() + mes.slice(1).toLowerCase())
 }
 
+/** Metragem residencial/comercial plausível — abaixo disso, corrigir vírgula deslocada (ex.: 1,02 → 102). */
+const METRAGEM_MIN_PLAUSIVEL = 10
+const METRAGEM_MAX_PLAUSIVEL = 9999
+
+/**
+ * Interpreta número de m² vindos de PDF (BR: 102,00 / 1.102,50 / faixas mal lidas).
+ * Corrige extrações impossíveis como 1,02 m² → 102 m².
+ */
+export function interpretarNumeroMetragem(part: string): number | null {
+  const raw = part.trim().replace(/\s+/g, '')
+  if (!raw || !/\d/.test(raw)) return null
+
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(raw)) {
+    const n = parseFloat(raw.replace(/\./g, '').replace(',', '.'))
+    return Number.isFinite(n) ? n : null
+  }
+
+  if (raw.includes(',')) {
+    const n = parseFloat(raw.replace(',', '.'))
+    if (!Number.isFinite(n)) return null
+    if (n >= METRAGEM_MIN_PLAUSIVEL) return n
+    return corrigirMetragemImpossivel(raw, n)
+  }
+
+  if (raw.includes('.')) {
+    const asDecimal = parseFloat(raw)
+    if (!Number.isFinite(asDecimal)) return null
+    if (asDecimal >= METRAGEM_MIN_PLAUSIVEL) return asDecimal
+
+    const milhar = raw.match(/^(\d)\.(\d{3})$/)
+    if (milhar) {
+      const corrigido = parseInt(milhar[1] + milhar[2], 10)
+      if (corrigido >= METRAGEM_MIN_PLAUSIVEL && corrigido <= METRAGEM_MAX_PLAUSIVEL) return corrigido
+    }
+
+    return corrigirMetragemImpossivel(raw.replace('.', ','), asDecimal)
+  }
+
+  const n = parseFloat(raw)
+  return Number.isFinite(n) ? n : null
+}
+
+function corrigirMetragemImpossivel(raw: string, n: number): number {
+  const concat = raw.match(/^(\d),(\d{2})$/)
+  if (concat) {
+    const corrigido = parseInt(concat[1] + concat[2], 10)
+    if (corrigido >= METRAGEM_MIN_PLAUSIVEL && corrigido <= METRAGEM_MAX_PLAUSIVEL) return corrigido
+  }
+
+  const vezes10 = n * 10
+  if (vezes10 >= METRAGEM_MIN_PLAUSIVEL && vezes10 <= METRAGEM_MAX_PLAUSIVEL) return vezes10
+
+  return n
+}
+
 function formatarParteMetragem(part: string): string {
-  const cleaned = part.trim().replace(',', '.')
-  const num = parseFloat(cleaned)
-  if (Number.isNaN(num)) return part.trim()
+  const num = interpretarNumeroMetragem(part)
+  if (num == null || Number.isNaN(num)) return part.trim()
   return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
@@ -169,12 +223,16 @@ export function sanitizarMetragemInput(val: string): string {
   return val.replace(/[^\d,.-]/g, '')
 }
 
-/** Valor numérico para edição, sem sufixo m². */
+/** Valor numérico para edição, sem sufixo m² (com correção de vírgula deslocada). */
 export function metragemParaEdicao(val: string | null | undefined): string {
   if (!val?.trim()) return ''
-  return sanitizarMetragemInput(
+  const core = sanitizarMetragemInput(
     val.trim().replace(/\s+/g, '').replace(/m²$/i, '').replace(/m2$/i, '')
   )
+  if (!core) return ''
+  const num = interpretarNumeroMetragem(core)
+  if (num == null) return core
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 export function formatarAndar(val: string | null | undefined): string | null {

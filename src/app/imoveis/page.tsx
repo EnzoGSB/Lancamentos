@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Search, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -10,6 +11,7 @@ import { LancamentoMobileCard } from '@/components/lancamento-mobile-card'
 import { LancamentosTable } from '@/components/lancamentos-table'
 import { ImoveisFontSizeControl } from '@/components/imoveis-font-size-control'
 import { FONT_SIZE_DEFAULT, loadFontSize, saveFontSize } from '@/lib/imoveis-font-size'
+import { normalizarTextoBusca, textoContemConsulta } from '@/lib/busca-texto'
 
 type FiltrosMulti = {
   construtora: string[]
@@ -54,15 +56,54 @@ function MultiSelectFiltro({
   onChange: (v: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [buscaLocal, setBuscaLocal] = useState('')
+  const [panelRect, setPanelRect] = useState<{ top: number; left: number; width: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const updatePanelRect = useCallback(() => {
+    if (!inputRef.current) return
+    const rect = inputRef.current.getBoundingClientRect()
+    setPanelRect({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 220),
+    })
+  }, [])
 
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (ref.current?.contains(target)) return
+      if (panelRef.current?.contains(target)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) {
+      setPanelRect(null)
+      return
+    }
+    updatePanelRect()
+    window.addEventListener('scroll', updatePanelRect, true)
+    window.addEventListener('resize', updatePanelRect)
+    return () => {
+      window.removeEventListener('scroll', updatePanelRect, true)
+      window.removeEventListener('resize', updatePanelRect)
+    }
+  }, [open, updatePanelRect, buscaLocal, options.length])
+
+  useEffect(() => {
+    if (open) {
+      inputRef.current?.focus()
+    } else {
+      setBuscaLocal('')
+    }
   }, [open])
 
   const toggle = (opt: string) => {
@@ -72,53 +113,107 @@ function MultiSelectFiltro({
 
   const resumo =
     values.length === 0
-      ? 'Todos'
+      ? ''
       : values.length === 1
         ? values[0]
         : `${values.length} selecionados`
 
-  return (
-    <div ref={ref} className="relative flex flex-col gap-1 w-full sm:min-w-[160px] sm:flex-1">
-      <label className="text-sm font-medium text-gray-500">{label}</label>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="h-10 w-full rounded-lg border border-input bg-white px-3 text-base text-left flex items-center justify-between gap-2 outline-none hover:bg-gray-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-      >
-        <span className="truncate text-gray-900">{resumo}</span>
-        <ChevronDown className={`size-4 shrink-0 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="absolute top-full left-0 z-50 mt-1 w-full min-w-[200px] max-h-52 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg p-1">
-          {options.length === 0 ? (
-            <p className="px-2 py-1.5 text-xs text-gray-400">Sem opções</p>
-          ) : (
-            options.map(opt => (
-              <label
-                key={opt}
-                className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-sm"
-              >
-                <input
-                  type="checkbox"
-                  checked={values.includes(opt)}
-                  onChange={() => toggle(opt)}
-                  className="size-3.5 rounded border-gray-300 accent-gray-900"
-                />
-                <span className="truncate" title={opt}>{opt}</span>
-              </label>
-            ))
-          )}
-          {values.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className="w-full mt-1 pt-1 border-t border-gray-100 px-2 py-1.5 text-xs text-gray-500 hover:text-gray-900 text-left"
-            >
-              Limpar seleção
-            </button>
-          )}
-        </div>
+  const opcoesFiltradas = useMemo(() => {
+    if (!buscaLocal.trim()) return options
+    return options.filter(opt => textoContemConsulta(opt, buscaLocal))
+  }, [options, buscaLocal])
+
+  const valorInput = open ? buscaLocal : resumo
+
+  const painelOpcoes = open && panelRect ? (
+    <div
+      ref={panelRef}
+      role="listbox"
+      style={{
+        position: 'fixed',
+        top: panelRect.top,
+        left: panelRect.left,
+        width: panelRect.width,
+        zIndex: 9999,
+      }}
+      className="max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl p-1"
+    >
+      {buscaLocal.trim() && options.length > 0 && (
+        <p className="px-2 py-1 text-xs text-gray-400 border-b border-gray-100 mb-1">
+          {opcoesFiltradas.length} de {options.length}
+          {normalizarTextoBusca(buscaLocal) ? ` · “${buscaLocal.trim()}”` : ''}
+        </p>
       )}
+      {options.length === 0 ? (
+        <p className="px-2 py-1.5 text-xs text-gray-400">Sem opções</p>
+      ) : opcoesFiltradas.length === 0 ? (
+        <p className="px-2 py-1.5 text-xs text-gray-400">Nenhuma opção encontrada</p>
+      ) : (
+        opcoesFiltradas.map(opt => (
+          <label
+            key={opt}
+            className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-sm"
+          >
+            <input
+              type="checkbox"
+              checked={values.includes(opt)}
+              onChange={() => toggle(opt)}
+              className="size-3.5 rounded border-gray-300 accent-gray-900"
+            />
+            <span className="truncate" title={opt}>{opt}</span>
+          </label>
+        ))
+      )}
+      {values.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onChange([])}
+          className="w-full mt-1 pt-1 border-t border-gray-100 px-2 py-1.5 text-xs text-gray-500 hover:text-gray-900 text-left"
+        >
+          Limpar seleção
+        </button>
+      )}
+    </div>
+  ) : null
+
+  return (
+    <div className="relative flex flex-col gap-1 w-full sm:min-w-[160px] sm:flex-1">
+      <label className="text-sm font-medium text-gray-500">{label}</label>
+      <div ref={ref} className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
+          placeholder="Todos — digite para filtrar"
+          value={valorInput}
+          onChange={e => {
+            setBuscaLocal(e.target.value)
+            setOpen(true)
+          }}
+          onFocus={() => setOpen(true)}
+          className="h-10 w-full rounded-lg border border-input bg-white pl-3 pr-9 text-base text-gray-900 outline-none hover:bg-gray-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 placeholder:text-gray-400"
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={`Abrir opções de ${label}`}
+          onClick={() => {
+            setOpen(o => {
+              const next = !o
+              if (next) queueMicrotask(() => inputRef.current?.focus())
+              return next
+            })
+          }}
+          className="absolute right-0 top-0 h-10 px-2.5 text-gray-400 hover:text-gray-600"
+        >
+          <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+      {typeof document !== 'undefined' && painelOpcoes
+        ? createPortal(painelOpcoes, document.body)
+        : null}
     </div>
   )
 }
@@ -259,7 +354,7 @@ export default function ImoveisPage() {
         </div>
       </div>
 
-      <Card className="mb-6">
+      <Card className="mb-6 overflow-visible relative z-20">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">Busca e filtros</CardTitle>
         </CardHeader>
