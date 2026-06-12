@@ -11,7 +11,9 @@ import type { LancamentoAI, AnaliseIA } from '@/lib/types'
 import {
   FIELD_CELL_CLASS,
   formatarCampo,
+  metragemParaEdicao,
   normalizarLancamentos,
+  sanitizarMetragemInput,
 } from '@/lib/formatar-lancamento'
 import { cn } from '@/lib/utils'
 
@@ -177,7 +179,10 @@ export default function MapeamentoPage() {
   }, [id, lancamentos, router])
 
   const updateLancamento = useCallback((index: number, field: keyof LancamentoAI, value: unknown) => {
-    setLancamentos(prev => prev.map((l, i) => i === index ? { ...l, [field]: value } : l))
+    const next = field === 'metragem' && typeof value === 'string'
+      ? sanitizarMetragemInput(value)
+      : value
+    setLancamentos(prev => prev.map((l, i) => i === index ? { ...l, [field]: next } : l))
   }, [])
 
   const blurCampo = useCallback((index: number, field: EditableField) => {
@@ -379,10 +384,19 @@ export default function MapeamentoPage() {
                           <td key={field} className="p-2">
                             <input
                               type="text"
-                              value={(l[field] as string) ?? ''}
+                              inputMode={field === 'metragem' ? 'decimal' : undefined}
+                              value={field === 'metragem'
+                                ? metragemParaEdicao(l[field] as string)
+                                : ((l[field] as string) ?? '')}
                               title={(l[field] as string) ?? undefined}
                               onChange={e => updateLancamento(i, field, e.target.value)}
-                              onFocus={() => selectCell(i, field)}
+                              onFocus={() => {
+                                selectCell(i, field)
+                                if (field === 'metragem' && l.metragem) {
+                                  const num = metragemParaEdicao(l.metragem)
+                                  if (num !== l.metragem) updateLancamento(i, 'metragem', num)
+                                }
+                              }}
                               onBlur={() => blurCampo(i, field)}
                               className={inputClass(selectedCell?.row === i && selectedCell?.field === field, field)}
                             />

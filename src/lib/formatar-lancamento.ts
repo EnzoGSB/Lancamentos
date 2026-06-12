@@ -128,6 +128,19 @@ function formatarParteMetragem(part: string): string {
   return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/** Mantém só dígitos e separadores válidos (vírgula, ponto, hífen para faixas). */
+export function sanitizarMetragemInput(val: string): string {
+  return val.replace(/[^\d,.-]/g, '')
+}
+
+/** Valor numérico para edição, sem sufixo m². */
+export function metragemParaEdicao(val: string | null | undefined): string {
+  if (!val?.trim()) return ''
+  return sanitizarMetragemInput(
+    val.trim().replace(/\s+/g, '').replace(/m²$/i, '').replace(/m2$/i, '')
+  )
+}
+
 export function formatarAndar(val: string | null | undefined): string | null {
   if (!val?.trim()) return null
   const s = val.trim().replace(/\s+/g, ' ')
@@ -153,16 +166,14 @@ export function formatarAndar(val: string | null | undefined): string | null {
 
 export function formatarMetragem(val: string | null | undefined): string | null {
   if (!val?.trim()) return null
-  let s = val.trim().replace(/\s+/g, '')
-  s = s.replace(/m2/gi, 'm²')
-  const hasSuffix = /m²$/i.test(s)
-  const core = hasSuffix ? s.replace(/m²$/i, '') : s
+  let s = sanitizarMetragemInput(val.trim().replace(/\s+/g, ''))
+  if (!s || !/\d/.test(s)) return null
 
-  if (core.includes('-')) {
-    const [a, b] = core.split('-')
+  if (s.includes('-')) {
+    const [a, b] = s.split('-')
     return `${formatarParteMetragem(a)}-${formatarParteMetragem(b)}m²`
   }
-  return `${formatarParteMetragem(core)}m²`
+  return `${formatarParteMetragem(s)}m²`
 }
 
 function formatarTipologiaInterno(val: string): string {

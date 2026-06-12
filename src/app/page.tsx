@@ -10,6 +10,10 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import type { ProcessamentoLancamento } from '@/lib/types'
 
+type ProcessamentoComContagem = ProcessamentoLancamento & {
+  empreendimentos_inseridos?: number | null
+}
+
 const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   pendente:               { label: 'Pendente',              variant: 'secondary' },
   extraindo:              { label: 'Extraindo',             variant: 'outline' },
@@ -22,7 +26,7 @@ const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secon
 }
 
 export default function Dashboard() {
-  const [processamentos, setProcessamentos] = useState<ProcessamentoLancamento[]>([])
+  const [processamentos, setProcessamentos] = useState<ProcessamentoComContagem[]>([])
   const [loading, setLoading] = useState(true)
   const [totalLancamentos, setTotalLancamentos] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -136,9 +140,17 @@ export default function Dashboard() {
                         {p.created_at && ` • ${new Date(p.created_at).toLocaleString('pt-BR')}`}
                       </p>
                       {p.status === 'concluido' && p.resultado && (
-                        <p className="text-xs text-green-600 mt-1">
-                          {(p.resultado as { inseridos: number }).inseridos} lançamentos inseridos
-                        </p>
+                        <div className="mt-1 space-y-0.5">
+                          {p.empreendimentos_inseridos != null && (
+                            <p className="text-xs text-green-600">
+                              {p.empreendimentos_inseridos}{' '}
+                              {p.empreendimentos_inseridos === 1 ? 'empreendimento' : 'empreendimentos'}
+                            </p>
+                          )}
+                          <p className="text-xs text-green-600">
+                            {(p.resultado as { inseridos: number }).inseridos} lançamentos inseridos
+                          </p>
+                        </div>
                       )}
                       {p.erro && <p className="text-xs text-red-500 mt-1">{p.erro}</p>}
                     </div>
