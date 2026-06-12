@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
   const empreendimentos = parseMulti(searchParams, 'empreendimento')
   const bairros = parseMulti(searchParams, 'bairro')
   const tipologias = parseMulti(searchParams, 'tipologia')
+  const entregas = parseMulti(searchParams, 'entrega')
   const valorMin = searchParams.get('valor_min')
   const valorMax = searchParams.get('valor_max')
   const limit = Math.min(Number(searchParams.get('limit') ?? 500), 1000)
@@ -59,6 +60,12 @@ export async function GET(request: NextRequest) {
   query = applyMultiFilter(query, 'empreendimento', empreendimentos)
   query = applyMultiFilter(query, 'bairro', bairros)
   query = applyMultiFilter(query, 'tipologia', tipologias)
+
+  if (entregas.length > 0) {
+    query = query.or(
+      entregas.map(e => `data_entrega.ilike.${escapeIlike(e)}`).join(',')
+    )
+  }
 
   const min = valorMin != null && valorMin !== '' ? Number(valorMin) : null
   const max = valorMax != null && valorMax !== '' ? Number(valorMax) : null

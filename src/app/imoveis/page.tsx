@@ -18,6 +18,7 @@ type FiltrosMulti = {
   empreendimento: string[]
   bairro: string[]
   tipologia: string[]
+  entrega: string[]
 }
 
 type Filtros = FiltrosMulti & {
@@ -32,6 +33,7 @@ type OpcoesFiltro = {
   empreendimentosPorConstrutora: Record<string, string[]>
   bairros: string[]
   tipologias: string[]
+  entregas: string[]
 }
 
 const FILTROS_VAZIOS: Filtros = {
@@ -40,6 +42,7 @@ const FILTROS_VAZIOS: Filtros = {
   empreendimento: [],
   bairro: [],
   tipologia: [],
+  entrega: [],
   valor_min: '',
   valor_max: '',
 }
@@ -227,6 +230,7 @@ export default function ImoveisPage() {
     empreendimentosPorConstrutora: {},
     bairros: [],
     tipologias: [],
+    entregas: [],
   })
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
   const [total, setTotal] = useState(0)
@@ -267,6 +271,7 @@ export default function ImoveisPage() {
       filtros.empreendimento.forEach(v => params.append('empreendimento', v))
       filtros.bairro.forEach(v => params.append('bairro', v))
       filtros.tipologia.forEach(v => params.append('tipologia', v))
+      filtros.entrega.forEach(v => params.append('entrega', v))
       if (filtros.valor_min) params.set('valor_min', filtros.valor_min)
       if (filtros.valor_max) params.set('valor_max', filtros.valor_max)
 
@@ -307,7 +312,8 @@ export default function ImoveisPage() {
       || filtros.construtora.length > 0
       || filtros.empreendimento.length > 0
       || filtros.bairro.length > 0
-      || filtros.tipologia.length > 0,
+      || filtros.tipologia.length > 0
+      || filtros.entrega.length > 0,
     [filtros]
   )
 
@@ -394,6 +400,12 @@ export default function ImoveisPage() {
               values={filtros.tipologia}
               options={opcoes.tipologias}
               onChange={v => atualizarFiltroMulti('tipologia', v)}
+            />
+            <MultiSelectFiltro
+              label="Entrega"
+              values={filtros.entrega}
+              options={opcoes.entregas}
+              onChange={v => atualizarFiltroMulti('entrega', v)}
             />
             <div className="flex flex-col gap-1 w-full sm:min-w-[120px] sm:flex-1">
               <label className="text-sm font-medium text-gray-500">Valor mín. (R$)</label>
