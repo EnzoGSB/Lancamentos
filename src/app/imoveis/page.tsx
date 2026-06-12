@@ -1,8 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
-import { ChevronDown, Search, Sparkles, X } from 'lucide-react'
+import { ChevronDown, Search, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -233,7 +232,7 @@ export default function ImoveisPage() {
   }
 
   return (
-    <div>
+    <div className="max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Imóveis</h1>
@@ -241,20 +240,12 @@ export default function ImoveisPage() {
             Catálogo de lançamentos salvos no banco mestre
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/imoveis/assistente">
-            <Button variant="outline" size="sm">
-              <Sparkles className="size-3.5 mr-1" />
-              Assistente IA
-            </Button>
-          </Link>
-          {temFiltrosAtivos && (
-            <Button variant="outline" size="sm" onClick={limparFiltros}>
-              <X className="size-3.5 mr-1" />
-              Limpar filtros
-            </Button>
-          )}
-        </div>
+        {temFiltrosAtivos && (
+          <Button variant="outline" size="sm" onClick={limparFiltros}>
+            <X className="size-3.5 mr-1" />
+            Limpar filtros
+          </Button>
+        )}
       </div>
 
       <Card className="mb-6">

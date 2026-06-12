@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
-import Link from "next/link";
+import { AppShell } from "@/components/app-shell";
 
 export const metadata: Metadata = {
   title: "Tabelões - Catalogador de Imóveis",
@@ -11,21 +12,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body className="antialiased bg-gray-50 min-h-screen font-sans">
-        <nav className="border-b bg-white sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-            <Link href="/" className="font-bold text-lg text-gray-900">Tabelões</Link>
-            <div className="flex gap-4 text-sm">
-              <Link href="/" className="text-gray-600 hover:text-gray-900">Dashboard</Link>
-              <Link href="/imoveis" className="text-gray-600 hover:text-gray-900">Imóveis</Link>
-              <Link href="/imoveis/assistente" className="text-gray-600 hover:text-gray-900">Assistente</Link>
-              <Link href="/upload" className="text-gray-600 hover:text-gray-900">Upload</Link>
-            </div>
-          </div>
-        </nav>
-        <main className="max-w-7xl mx-auto px-4 py-6">
-          {children}
-        </main>
+      <body className="antialiased font-sans">
+        <Suspense fallback={<div className="h-screen bg-gray-50" />}>
+          <AppShell>{children}</AppShell>
+        </Suspense>
         <Toaster />
       </body>
     </html>

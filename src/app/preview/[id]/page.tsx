@@ -46,7 +46,7 @@ export default function PreviewPage() {
     <div className="max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Resultado do Processamento</h1>
-        <Link href="/" className="text-sm text-gray-500 hover:underline">← Dashboard</Link>
+        <Link href="/dashboard" className="text-sm text-gray-500 hover:underline">← Dashboard</Link>
       </div>
 
       {status === 'concluido' && resultado && (
