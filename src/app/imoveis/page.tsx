@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import type { Lancamento } from '@/lib/types'
 import { exibirCampo } from '@/lib/formatar-lancamento'
 import { VerPdfButton } from '@/components/ver-pdf-button'
+import { LancamentoMobileCard } from '@/components/lancamento-mobile-card'
 
 type FiltrosMulti = {
   construtora: string[]
@@ -80,7 +81,7 @@ function MultiSelectFiltro({
         : `${values.length} selecionados`
 
   return (
-    <div ref={ref} className="relative flex flex-col gap-1 min-w-[160px] flex-1">
+    <div ref={ref} className="relative flex flex-col gap-1 w-full sm:min-w-[160px] sm:flex-1">
       <label className="text-sm font-medium text-gray-500">{label}</label>
       <button
         type="button"
@@ -233,15 +234,15 @@ export default function ImoveisPage() {
 
   return (
     <div className="w-full max-w-[1600px] mx-auto">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-5 sm:mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Imóveis</h1>
-          <p className="text-base text-gray-500 mt-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Imóveis</h1>
+          <p className="text-sm sm:text-base text-gray-500 mt-1 sm:mt-2">
             Catálogo de lançamentos salvos no banco mestre
           </p>
         </div>
         {temFiltrosAtivos && (
-          <Button variant="outline" size="sm" onClick={limparFiltros}>
+          <Button variant="outline" size="sm" onClick={limparFiltros} className="w-full sm:w-auto touch-manipulation">
             <X className="size-3.5 mr-1" />
             Limpar filtros
           </Button>
@@ -264,7 +265,7 @@ export default function ImoveisPage() {
             />
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
             <MultiSelectFiltro
               label="Construtora"
               values={filtros.construtora}
@@ -289,7 +290,7 @@ export default function ImoveisPage() {
               options={opcoes.tipologias}
               onChange={v => atualizarFiltroMulti('tipologia', v)}
             />
-            <div className="flex flex-col gap-1 min-w-[120px] flex-1">
+            <div className="flex flex-col gap-1 w-full sm:min-w-[120px] sm:flex-1">
               <label className="text-sm font-medium text-gray-500">Valor mín. (R$)</label>
               <Input
                 type="number"
@@ -298,7 +299,7 @@ export default function ImoveisPage() {
                 onChange={e => setFiltros(prev => ({ ...prev, valor_min: e.target.value }))}
               />
             </div>
-            <div className="flex flex-col gap-1 min-w-[120px] flex-1">
+            <div className="flex flex-col gap-1 w-full sm:min-w-[120px] sm:flex-1">
               <label className="text-sm font-medium text-gray-500">Valor máx. (R$)</label>
               <Input
                 type="number"
@@ -327,8 +328,14 @@ export default function ImoveisPage() {
                 : 'Nenhum lançamento salvo ainda. Processe um PDF e confirme os dados.'}
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <>
+              <div className="md:hidden p-3 space-y-3">
+                {lancamentos.map(l => (
+                  <LancamentoMobileCard key={l.id} lancamento={l} />
+                ))}
+              </div>
+              <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm min-w-[900px]">
                 <thead>
                   <tr className="border-b bg-gray-50">
                     {['Construtora', 'Empreendimento', 'Bairro', 'Entrega', 'Tipologia', 'Unidade', 'Andar', 'Metragem', 'Vagas', 'Valor Mín.', 'Valor Máx.', 'Desconto', 'PDF'].map(h => (
@@ -358,7 +365,8 @@ export default function ImoveisPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

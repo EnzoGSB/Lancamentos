@@ -46,9 +46,9 @@ export default function UploadPage() {
   }, [])
 
   return (
-    <div className="max-w-xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Upload de Tabelão</h1>
-      <p className="text-sm text-gray-500 mb-6">
+    <div className="w-full max-w-xl mx-auto">
+      <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">Upload de Tabelão</h1>
+      <p className="text-sm sm:text-base text-gray-500 mb-5 sm:mb-6">
         A IA vai analisar o PDF automaticamente, identificar se é um único empreendimento ou múltiplos,
         e extrair todas as tipologias com seus dados.
       </p>
@@ -62,7 +62,7 @@ export default function UploadPage() {
             onDrop={handleDrop}
             onDragOver={e => e.preventDefault()}
             onClick={() => document.getElementById('pdf-input')?.click()}
-            className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center cursor-pointer hover:border-gray-400 transition-colors"
+            className="border-2 border-dashed border-gray-300 rounded-lg p-8 sm:p-12 text-center cursor-pointer hover:border-gray-400 transition-colors touch-manipulation"
           >
             {file ? (
               <div>

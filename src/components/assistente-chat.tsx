@@ -131,31 +131,31 @@ export function AssistenteChat() {
   }, [loading, messages, salvarMensagens, iniciarConversa, scrollToBottom])
 
   return (
-    <div className="flex flex-col h-full w-full max-w-none 2xl:max-w-[1400px] mx-auto px-5 md:px-10 lg:px-14 py-6 md:py-8">
-      <div className="mb-6 shrink-0">
-        <div className="flex items-center gap-3 mb-2">
-          <Sparkles className="size-7 text-blue-600" />
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Pesquisa de Imóveis</h1>
+    <div className="flex flex-col h-full w-full max-w-none 2xl:max-w-[1400px] mx-auto px-3 sm:px-5 md:px-10 lg:px-14 py-3 sm:py-6 md:py-8">
+      <div className="mb-4 sm:mb-6 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
+          <Sparkles className="size-6 sm:size-7 text-blue-600 shrink-0" />
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">Pesquisa de Imóveis</h1>
         </div>
-        <p className="text-base md:text-lg text-gray-500 max-w-3xl">
+        <p className="text-sm sm:text-base md:text-lg text-gray-500 max-w-3xl">
           Descreva o que procura em linguagem natural. A IA interpreta e busca no catálogo extraído dos PDFs.
         </p>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-5 mb-6 pr-1">
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 sm:gap-5 mb-3 sm:mb-6 pr-0.5 overscroll-contain">
         {messages.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center text-center py-10 md:py-16">
-            <p className="text-xl md:text-2xl font-semibold text-gray-800 mb-2">O que você procura?</p>
-            <p className="text-base md:text-lg text-gray-500 mb-8 max-w-xl">
+          <div className="flex-1 flex flex-col items-center justify-center text-center py-6 sm:py-10 md:py-16">
+            <p className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-800 mb-2">O que você procura?</p>
+            <p className="text-sm sm:text-base md:text-lg text-gray-500 mb-6 sm:mb-8 max-w-xl px-2">
               Experimente uma destas buscas ou descreva o imóvel ideal no campo abaixo.
             </p>
-            <div className="flex flex-wrap gap-3 justify-center max-w-4xl">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-3 justify-center w-full max-w-4xl px-1">
               {EXEMPLOS.map(ex => (
                 <button
                   key={ex}
                   type="button"
                   onClick={() => enviar(ex)}
-                  className="text-sm md:text-base px-5 py-3 rounded-full border bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors text-left"
+                  className="text-sm sm:text-base px-4 sm:px-5 py-3 rounded-xl sm:rounded-full border bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors text-left touch-manipulation w-full sm:w-auto"
                 >
                   {ex}
                 </button>
@@ -172,18 +172,18 @@ export function AssistenteChat() {
             <div
               className={
                 msg.role === 'user'
-                  ? 'max-w-[85%] rounded-2xl rounded-br-md bg-gray-900 text-white px-5 py-3.5 text-base md:text-lg leading-relaxed'
-                  : 'max-w-full w-full space-y-4'
+                  ? 'max-w-[92%] sm:max-w-[85%] rounded-2xl rounded-br-md bg-gray-900 text-white px-4 sm:px-5 py-3 sm:py-3.5 text-sm sm:text-base md:text-lg leading-relaxed'
+                  : 'max-w-full w-full space-y-3 sm:space-y-4'
               }
             >
               {msg.role === 'assistant' && (
-                <p className="text-base md:text-lg text-gray-700 bg-gray-100 rounded-2xl rounded-bl-md px-5 py-3.5 leading-relaxed">
+                <p className="text-sm sm:text-base md:text-lg text-gray-700 bg-gray-100 rounded-2xl rounded-bl-md px-4 sm:px-5 py-3 sm:py-3.5 leading-relaxed">
                   {msg.content}
                 </p>
               )}
               {msg.role === 'user' && msg.content}
               {msg.imoveis && msg.imoveis.length > 0 && (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
                   {msg.imoveis.map(imovel => (
                     <ImovelCard key={imovel.id} imovel={imovel} />
                   ))}
@@ -202,28 +202,35 @@ export function AssistenteChat() {
         <div ref={bottomRef} />
       </div>
 
-      <form
-        className="flex gap-3 shrink-0"
-        onSubmit={e => {
-          e.preventDefault()
-          enviar(input)
-        }}
-      >
-        <Input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          placeholder="Ex: quero um apê de 3 quartos na Vila Mariana até 2 milhões..."
-          disabled={loading}
-          className="flex-1 h-12 md:h-14 text-base md:text-lg px-4 bg-white"
-        />
-        <Button type="submit" size="lg" className="h-12 md:h-14 px-5" disabled={loading || !input.trim()}>
-          {loading ? <Loader2 className="size-5 animate-spin" /> : <Send className="size-5" />}
-        </Button>
-      </form>
+      <div className="shrink-0 sticky bottom-0 bg-gray-50 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] -mx-3 px-3 sm:mx-0 sm:px-0 border-t border-transparent sm:border-0">
+        <form
+          className="flex gap-2 sm:gap-3"
+          onSubmit={e => {
+            e.preventDefault()
+            enviar(input)
+          }}
+        >
+          <Input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="Descreva o imóvel que procura..."
+            disabled={loading}
+            className="flex-1 min-w-0 h-11 sm:h-12 md:h-14 text-base md:text-lg px-3 sm:px-4 bg-white"
+          />
+          <Button
+            type="submit"
+            size="lg"
+            className="h-11 sm:h-12 md:h-14 px-4 sm:px-5 shrink-0 touch-manipulation"
+            disabled={loading || !input.trim()}
+          >
+            {loading ? <Loader2 className="size-5 animate-spin" /> : <Send className="size-5" />}
+          </Button>
+        </form>
 
-      <p className="text-sm text-gray-400 mt-3 text-center shrink-0">
-        Powered by gpt-4o-mini · resultados do catálogo salvo no banco
-      </p>
+        <p className="hidden sm:block text-sm text-gray-400 mt-3 text-center">
+          Powered by gpt-4o-mini · resultados do catálogo salvo no banco
+        </p>
+      </div>
     </div>
   )
 }

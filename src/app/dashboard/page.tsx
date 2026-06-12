@@ -75,11 +75,11 @@ export default function DashboardPage() {
 
   return (
     <div className="w-full max-w-[1600px] mx-auto">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-5 sm:mb-8">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
         <Link
           href="/upload"
-          className="inline-flex items-center px-5 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 text-base font-medium"
+          className="inline-flex items-center justify-center px-5 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 text-base font-medium w-full sm:w-auto touch-manipulation"
         >
           + Novo Upload
         </Link>
@@ -130,7 +130,7 @@ export default function DashboardPage() {
                 const analise = p.analise_ia as { construtora?: string; tipo?: string } | null
 
                 return (
-                  <div key={p.id} className="flex items-center justify-between py-4">
+                  <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 py-4">
                     <div className="flex-1 min-w-0">
                       <p className="text-base font-medium text-gray-900 truncate">
                         {p.original_filename || 'Arquivo sem nome'}
@@ -154,7 +154,7 @@ export default function DashboardPage() {
                       )}
                       {p.erro && <p className="text-sm text-red-500 mt-1">{p.erro}</p>}
                     </div>
-                    <div className="flex items-center gap-2 ml-4">
+                    <div className="flex flex-wrap items-center gap-2 sm:ml-4 shrink-0">
                       <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
                       {p.status === 'aguardando_confirmacao' && (
                         <Link

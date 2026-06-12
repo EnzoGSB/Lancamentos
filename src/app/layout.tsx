@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Montserrat } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
@@ -14,6 +14,12 @@ const montserrat = Montserrat({
 export const metadata: Metadata = {
   title: "Tabelões - Catalogador de Imóveis",
   description: "Sistema de catalogação de tabelas de construtoras em banco de dados mestre",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

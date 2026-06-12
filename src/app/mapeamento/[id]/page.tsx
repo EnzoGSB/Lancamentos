@@ -242,8 +242,8 @@ export default function MapeamentoPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">Revisão de Lançamentos</h1>
+    <div className="w-full max-w-6xl mx-auto">
+      <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Revisão de Lançamentos</h1>
 
       {status === 'pendente' && (
         <Card className="mb-6">
@@ -279,7 +279,7 @@ export default function MapeamentoPage() {
       {status === 'aguardando_confirmacao' && (
         <>
           {analise && (
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
               <Badge variant={analise.tipo === 'multi' ? 'secondary' : 'default'}>
                 {analise.tipo === 'multi' ? 'Multi-empreendimento' : 'Empreendimento único'}
               </Badge>
@@ -301,17 +301,19 @@ export default function MapeamentoPage() {
             </p>
           )}
 
-          <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-between items-stretch sm:items-center gap-3 mb-4">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3">
               <p className="text-sm text-gray-500">
                 Revise os dados abaixo. Você pode editar qualquer campo antes de salvar.
               </p>
+              <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={aplicarParaColuna}
                 disabled={!selectedCell}
+                className="flex-1 sm:flex-none touch-manipulation"
                 title={selectedCell
                   ? `Aplicar o valor da linha ${selectedCell.row + 1} (${FIELD_LABELS[selectedCell.field]}) em todas as linhas`
                   : 'Clique em uma célula e depois aplique para toda a coluna'}
@@ -324,26 +326,31 @@ export default function MapeamentoPage() {
                 size="sm"
                 onClick={desfazer}
                 disabled={undoStack.length === 0}
+                className="touch-manipulation"
                 title="Desfazer última aplicação em coluna (Ctrl+Z)"
               >
                 <Undo2 className="size-3.5" />
                 Desfazer
               </Button>
+              </div>
               {selectedCell && (
                 <span className="text-xs text-blue-600">
                   Selecionado: linha {selectedCell.row + 1}, {FIELD_LABELS[selectedCell.field]}
                 </span>
               )}
             </div>
-            <Button onClick={handleConfirm} disabled={confirming} size="lg">
+            <Button onClick={handleConfirm} disabled={confirming} size="lg" className="w-full sm:w-auto touch-manipulation shrink-0">
               {confirming ? 'Salvando...' : `Confirmar e Salvar ${lancamentos.length} lançamentos`}
             </Button>
           </div>
 
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+              <p className="md:hidden text-xs text-gray-400 px-3 py-2 border-b bg-gray-50">
+                Deslize horizontalmente para ver todas as colunas
+              </p>
+              <div className="overflow-x-auto overscroll-x-contain">
+                <table className="w-full text-xs min-w-[1100px]">
                   <thead>
                     <tr className="border-b bg-gray-50">
                       <th className="text-left p-2 font-medium text-gray-500 whitespace-nowrap">#</th>

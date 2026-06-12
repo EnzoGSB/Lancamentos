@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
 import type { Lancamento } from '@/lib/types'
 import { exibirCampo } from '@/lib/formatar-lancamento'
+import { LancamentoMobileCard } from '@/components/lancamento-mobile-card'
 
 export default function PreviewPage() {
   const params = useParams()
@@ -43,14 +44,14 @@ export default function PreviewPage() {
     v != null ? `R$ ${v.toLocaleString('pt-BR')}` : '—'
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Resultado do Processamento</h1>
-        <Link href="/dashboard" className="text-sm text-gray-500 hover:underline">← Dashboard</Link>
+    <div className="w-full max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5 sm:mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Resultado do Processamento</h1>
+        <Link href="/dashboard" className="text-sm text-gray-500 hover:underline touch-manipulation">← Dashboard</Link>
       </div>
 
       {status === 'concluido' && resultado && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-5 sm:mb-6">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-gray-500">Lançamentos salvos</CardTitle>
@@ -106,8 +107,13 @@ export default function PreviewPage() {
             <CardTitle>Lançamentos ({lancamentos.length})</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+            <div className="md:hidden p-3 space-y-3">
+              {lancamentos.map(l => (
+                <LancamentoMobileCard key={l.id} lancamento={l} showPdf={false} />
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm min-w-[900px]">
                 <thead>
                   <tr className="border-b bg-gray-50">
                     {['Construtora', 'Empreendimento', 'Bairro', 'Entrega', 'Tipologia', 'Unidade', 'Andar', 'Metragem', 'Vagas', 'Valor Mín.', 'Valor Máx.', 'Desconto'].map(h => (
