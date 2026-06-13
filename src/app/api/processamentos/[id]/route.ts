@@ -16,6 +16,34 @@ export async function GET(
   return NextResponse.json(data)
 }
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const body = await request.json().catch(() => ({}))
+  const status = body.status as string | undefined
+
+  if (status !== 'pendente') {
+    return NextResponse.json({ error: 'Apenas reenfileirar (status pendente) é suportado.' }, { status: 400 })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('processamentos_lancamentos')
+    .update({ status: 'pendente', erro: null })
+    .eq('id', id)
+    .eq('status', 'erro')
+    .select('id, status')
+    .maybeSingle()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!data) {
+    return NextResponse.json({ error: 'Processamento não encontrado ou não está em erro.' }, { status: 404 })
+  }
+
+  return NextResponse.json(data)
+}
+
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

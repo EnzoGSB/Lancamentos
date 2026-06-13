@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { AssistenteProvider, useAssistente } from '@/components/assistente-provider'
+import { FilaProcessamentoProvider } from '@/components/fila-processamento-provider'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
@@ -312,7 +313,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AssistenteProvider>
-      <AppShellInner>{children}</AppShellInner>
+      <FilaProcessamentoProvider>
+        <AppShellInner>{children}</AppShellInner>
+      </FilaProcessamentoProvider>
     </AssistenteProvider>
   )
 }

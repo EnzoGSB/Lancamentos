@@ -16,6 +16,8 @@ import {
   sanitizarMetragemInput,
 } from '@/lib/formatar-lancamento'
 import { cn } from '@/lib/utils'
+import { posicaoNaFila } from '@/lib/fila-processamento'
+import { EVENTO_FILA_ATUALIZADA, solicitarProcessamento } from '@/lib/processamento-fila-worker'
 
 const STATUS_EM_PROGRESSO = ['extraindo', 'analisando', 'processando']
 
@@ -77,6 +79,7 @@ export default function MapeamentoPage() {
   const [erro, setErro] = useState('')
   const [analise, setAnalise] = useState<AnaliseIA | null>(null)
   const [lancamentos, setLancamentos] = useState<LancamentoAI[]>([])
+  const [posicaoFila, setPosicaoFila] = useState<number | null>(null)
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
   const [undoStack, setUndoStack] = useState<LancamentoAI[][]>([])
   const undoStackRef = useRef(undoStack)
@@ -106,50 +109,54 @@ export default function MapeamentoPage() {
     fetchData()
   }, [id])
 
-  // Poll enquanto em progresso
+  // Poll enquanto pendente (fila global) ou em progresso
   useEffect(() => {
-    if (!STATUS_EM_PROGRESSO.includes(status)) return
-    const interval = setInterval(async () => {
-      const res = await fetch(`/api/processamentos/${id}`)
-      const data = await res.json()
-      setStatus(data.status)
-      if (data.analise_ia) setAnalise(data.analise_ia as AnaliseIA)
-      if (data.lancamentos_ai?.lancamentos) {
-        setLancamentos(normalizarLancamentos(data.lancamentos_ai.lancamentos as LancamentoAI[]))
-        setUndoStack([])
-        clearInterval(interval)
+    if (!['pendente', ...STATUS_EM_PROGRESSO].includes(status)) return
+
+    const poll = async () => {
+      try {
+        const [resSelf, resAll] = await Promise.all([
+          fetch(`/api/processamentos/${id}`),
+          status === 'pendente' ? fetch('/api/processamentos') : Promise.resolve(null),
+        ])
+        const data = await resSelf.json()
+        setStatus(data.status)
+        setErro(data.erro || '')
+        if (data.analise_ia) setAnalise(data.analise_ia as AnaliseIA)
+        if (data.lancamentos_ai?.lancamentos) {
+          setLancamentos(normalizarLancamentos(data.lancamentos_ai.lancamentos as LancamentoAI[]))
+          setUndoStack([])
+        }
+
+        if (status === 'pendente' && resAll) {
+          const all = await resAll.json()
+          if (Array.isArray(all)) {
+            setPosicaoFila(posicaoNaFila(id, all))
+          }
+        }
+      } catch {
+        // silencioso
       }
-      if (data.status === 'erro') {
-        setErro(data.erro || 'Erro desconhecido')
-        clearInterval(interval)
-      }
-    }, 3000)
+    }
+
+    void poll()
+    const interval = setInterval(poll, 3000)
     return () => clearInterval(interval)
   }, [id, status])
 
-  const handleProcess = useCallback(async () => {
+  const handleRetry = useCallback(async () => {
     setProcessing(true)
-    setStatus('extraindo')
+    setErro('')
     try {
-      const res = await fetch('/api/processar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processamentoId: id }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setAnalise(data.analise)
-        setLancamentos(normalizarLancamentos(data.lancamentos))
-        setUndoStack([])
-        setStatus('aguardando_confirmacao')
-        toast.success(`${data.lancamentos.length} tipologias extraídas pela IA.`)
-      } else {
-        setStatus('erro')
-        setErro(data.error || 'Erro ao processar')
-        toast.error(data.error || 'Erro ao processar')
+      const result = await solicitarProcessamento(id)
+      if (!result.ok) {
+        toast.error(result.error || 'Erro ao reenfileirar')
+        return
       }
+      setStatus('pendente')
+      window.dispatchEvent(new CustomEvent(EVENTO_FILA_ATUALIZADA))
+      toast.message('PDF reenfileirado — aguarde o processamento anterior terminar.')
     } catch {
-      setStatus('erro')
       toast.error('Erro de conexão')
     } finally {
       setProcessing(false)
@@ -248,10 +255,15 @@ export default function MapeamentoPage() {
       {status === 'pendente' && (
         <Card className="mb-6">
           <CardContent className="py-10 text-center">
-            <p className="text-gray-600 mb-4">PDF enviado. Clique para processar com IA.</p>
-            <Button onClick={handleProcess} disabled={processing} size="lg">
-              {processing ? 'Iniciando...' : 'Processar com IA'}
-            </Button>
+            <p className="text-lg font-medium text-gray-700">PDF na fila de processamento</p>
+            <p className="text-sm text-gray-500 mt-2">
+              {posicaoFila != null && posicaoFila > 1
+                ? `Posição ${posicaoFila} na fila — aguardando o PDF anterior terminar.`
+                : 'Aguardando slot livre — o processamento inicia automaticamente.'}
+            </p>
+            <p className="text-xs text-gray-400 mt-3">
+              Apenas um PDF é processado por vez. Acompanhe a fila no Dashboard.
+            </p>
           </CardContent>
         </Card>
       )}
@@ -271,7 +283,9 @@ export default function MapeamentoPage() {
         <Card className="mb-6 border-red-200 bg-red-50">
           <CardContent className="py-6 text-center">
             <p className="text-red-700 font-medium mb-4">{erro}</p>
-            <Button onClick={handleProcess} variant="outline">Tentar novamente</Button>
+            <Button onClick={handleRetry} variant="outline" disabled={processing}>
+              {processing ? 'Reenfileirando...' : 'Tentar novamente'}
+            </Button>
           </CardContent>
         </Card>
       )}

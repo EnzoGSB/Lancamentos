@@ -1,37 +1,17 @@
-const STORAGE_KEY = 'tabeloes-fila-batch'
-
-export type FilaBatch = {
-  ids: string[]
-  createdAt: number
+export type ProcessamentoMin = {
+  id: string
+  status: string
+  created_at?: string | null
+  original_filename?: string | null
 }
 
-export function salvarFilaBatch(ids: string[]) {
-  if (typeof sessionStorage === 'undefined' || ids.length === 0) return
-  const payload: FilaBatch = { ids, createdAt: Date.now() }
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-}
+/** Status que ocupam o “slot” único de extração com IA. */
+export const STATUS_PROCESSAMENTO_OCUPADO = ['extraindo', 'analisando', 'processando'] as const
 
-export function lerFilaBatch(): FilaBatch | null {
-  if (typeof sessionStorage === 'undefined') return null
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as FilaBatch
-    if (!Array.isArray(parsed.ids) || parsed.ids.length === 0) return null
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-export function limparFilaBatch() {
-  if (typeof sessionStorage === 'undefined') return
-  sessionStorage.removeItem(STORAGE_KEY)
-}
-
-type ProcessamentoMin = { id: string; status: string; created_at?: string | null }
-
-const STATUS_EM_PROGRESSO = ['extraindo', 'analisando', 'processando', 'salvando'] as const
+export const STATUS_EM_PROGRESSO = [
+  ...STATUS_PROCESSAMENTO_OCUPADO,
+  'salvando',
+] as const
 
 function ordenarPendentes(pendentes: ProcessamentoMin[]) {
   return [...pendentes].sort((a, b) => {
@@ -41,50 +21,51 @@ function ordenarPendentes(pendentes: ProcessamentoMin[]) {
   })
 }
 
-export function resumoFilaBatch(
-  fila: FilaBatch,
-  processamentos: ProcessamentoMin[]
-) {
-  const map = new Map(processamentos.map(p => [p.id, p]))
-  let processados = 0
-  let erros = 0
-  let emProgresso: string | null = null
-  let pendentes = 0
-
-  for (const id of fila.ids) {
-    const p = map.get(id)
-    if (!p) continue
-    if (p.status === 'pendente') pendentes++
-    else if (['extraindo', 'analisando', 'processando'].includes(p.status)) {
-      emProgresso = id
-    } else if (p.status === 'erro') erros++
-    else processados++
-  }
-
-  const total = fila.ids.length
-  const concluidos = processados + erros
-  const ativa = pendentes > 0 || emProgresso != null
-
-  return { total, processados, erros, concluidos, pendentes, emProgresso, ativa }
+export function haProcessamentoEmAndamento(processamentos: ProcessamentoMin[]): boolean {
+  return processamentos.some(p =>
+    STATUS_PROCESSAMENTO_OCUPADO.includes(p.status as (typeof STATUS_PROCESSAMENTO_OCUPADO)[number])
+  )
 }
 
-export function proximoPendente(
-  processamentos: ProcessamentoMin[],
-  preferirIds?: string[]
-): ProcessamentoMin | null {
-  const emAndamento = processamentos.some(p =>
-    STATUS_EM_PROGRESSO.includes(p.status as (typeof STATUS_EM_PROGRESSO)[number])
-  )
-  if (emAndamento) return null
+export function emProgresso(status: string): boolean {
+  return (STATUS_EM_PROGRESSO as readonly string[]).includes(status)
+}
+
+/** Próximo PDF pendente na fila global (FIFO por created_at). */
+export function proximoPendente(processamentos: ProcessamentoMin[]): ProcessamentoMin | null {
+  if (haProcessamentoEmAndamento(processamentos)) return null
 
   const pendentes = ordenarPendentes(processamentos.filter(p => p.status === 'pendente'))
-  if (pendentes.length === 0) return null
+  return pendentes[0] ?? null
+}
 
-  if (preferirIds?.length) {
-    const set = new Set(preferirIds)
-    const naFila = pendentes.filter(p => set.has(p.id))
-    if (naFila.length > 0) return naFila[0]
+export function posicaoNaFila(id: string, processamentos: ProcessamentoMin[]): number | null {
+  const pendentes = ordenarPendentes(processamentos.filter(p => p.status === 'pendente'))
+  const idx = pendentes.findIndex(p => p.id === id)
+  return idx >= 0 ? idx + 1 : null
+}
+
+export type ResumoFilaGlobal = {
+  totalPendentes: number
+  emProgresso: ProcessamentoMin | null
+  ativa: boolean
+}
+
+export function resumoFilaGlobal(processamentos: ProcessamentoMin[]): ResumoFilaGlobal {
+  const pendentes = processamentos.filter(p => p.status === 'pendente')
+  const emProgresso =
+    processamentos.find(p =>
+      STATUS_PROCESSAMENTO_OCUPADO.includes(p.status as (typeof STATUS_PROCESSAMENTO_OCUPADO)[number])
+    ) ?? null
+
+  return {
+    totalPendentes: pendentes.length,
+    emProgresso,
+    ativa: pendentes.length > 0 || emProgresso != null,
   }
+}
 
-  return pendentes[0]
+/** IDs com status pendente (aguardando slot). */
+export function idsAguardandoFila(processamentos: ProcessamentoMin[]): Set<string> {
+  return new Set(processamentos.filter(p => p.status === 'pendente').map(p => p.id))
 }

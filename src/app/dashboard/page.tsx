@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { Building2, ChevronDown, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -10,12 +10,11 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { FilaProcessamentoBanner } from '@/components/fila-processamento-banner'
 import {
-  lerFilaBatch,
-  limparFilaBatch,
-  proximoPendente,
-  resumoFilaBatch,
-  type FilaBatch,
+  emProgresso,
+  idsAguardandoFila,
+  resumoFilaGlobal,
 } from '@/lib/fila-processamento'
+import { EVENTO_FILA_ATUALIZADA } from '@/lib/processamento-fila-worker'
 import type { AnaliseIA, ProcessamentoLancamento } from '@/lib/types'
 
 type ProcessamentoComContagem = ProcessamentoLancamento & {
@@ -45,12 +44,6 @@ const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secon
   salvando:               { label: 'Salvando',              variant: 'outline' },
   concluido:              { label: 'Concluído',             variant: 'default' },
   erro:                   { label: 'Erro',                  variant: 'destructive' },
-}
-
-const STATUS_EM_PROGRESSO = ['extraindo', 'analisando', 'processando', 'salvando'] as const
-
-function emProgresso(status: string) {
-  return (STATUS_EM_PROGRESSO as readonly string[]).includes(status)
 }
 
 function ProcessamentoRow({
@@ -114,18 +107,9 @@ function ProcessamentoRow({
           </Link>
         )}
         {p.status === 'pendente' && (
-          naFila ? (
-            <span className="text-sm px-4 py-1.5 bg-gray-100 text-gray-600 rounded">
-              Na fila
-            </span>
-          ) : (
-            <Link
-              href={`/mapeamento/${p.id}`}
-              className="text-sm px-4 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-800"
-            >
-              Processar
-            </Link>
-          )
+          <span className="text-sm px-4 py-1.5 bg-gray-100 text-gray-600 rounded">
+            {naFila ? 'Na fila' : 'Aguardando'}
+          </span>
         )}
         <Button
           type="button"
@@ -249,35 +233,15 @@ export default function DashboardPage() {
   const [deleteTarget, setDeleteTarget] = useState<ProcessamentoLancamento | null>(null)
   const [filtroConstrutora, setFiltroConstrutora] = useState<string | null>(null)
   const [recolhidas, setRecolhidas] = useState<Set<string>>(new Set())
-  const [filaBatch, setFilaBatch] = useState<FilaBatch | null>(null)
-  const filaProcessandoRef = useRef(false)
-
-  useEffect(() => {
-    setFilaBatch(lerFilaBatch())
-  }, [])
-
   const idsNaFila = useMemo(
-    () => (filaBatch ? new Set(filaBatch.ids) : undefined),
-    [filaBatch]
+    () => idsAguardandoFila(processamentos),
+    [processamentos]
   )
 
   const resumoFila = useMemo(
-    () => (filaBatch ? resumoFilaBatch(filaBatch, processamentos) : null),
-    [filaBatch, processamentos]
+    () => resumoFilaGlobal(processamentos),
+    [processamentos]
   )
-
-  useEffect(() => {
-    if (!filaBatch || processamentos.length === 0) return
-    setRecolhidas(prev => {
-      const temNaFila = processamentos.some(
-        p => filaBatch.ids.includes(p.id) && getConstrutora(p) === CONSTRUTORA_NAO_IDENTIFICADA
-      )
-      if (!temNaFila) return prev
-      const next = new Set(prev)
-      next.delete(CONSTRUTORA_NAO_IDENTIFICADA)
-      return next
-    })
-  }, [filaBatch, processamentos])
 
   const toggleRecolhida = useCallback((construtora: string) => {
     setRecolhidas(prev => {
@@ -368,7 +332,7 @@ export default function DashboardPage() {
 
   const temEmAndamento = processamentos.some(p => emProgresso(p.status))
   const temPendentes = processamentos.some(p => p.status === 'pendente')
-  const filaAtiva = resumoFila?.ativa ?? false
+  const filaAtiva = resumoFila.ativa
 
   useEffect(() => {
     if (!temEmAndamento && !temPendentes && !filaAtiva) return
@@ -377,39 +341,12 @@ export default function DashboardPage() {
   }, [temEmAndamento, temPendentes, filaAtiva, refreshProcessamentos])
 
   useEffect(() => {
-    if (!filaBatch || processamentos.length === 0) return
-
-    const resumo = resumoFilaBatch(filaBatch, processamentos)
-    if (!resumo.ativa && resumo.concluidos >= resumo.total) {
-      limparFilaBatch()
-      return
+    const onFila = () => {
+      void refreshProcessamentos()
     }
-
-    const proximo = proximoPendente(processamentos, filaBatch.ids)
-    if (!proximo || !filaBatch.ids.includes(proximo.id)) return
-
-    if (filaProcessandoRef.current) return
-
-    filaProcessandoRef.current = true
-    ;(async () => {
-      try {
-        const res = await fetch('/api/processar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ processamentoId: proximo.id }),
-        })
-        if (!res.ok) {
-          const data = await res.json()
-          toast.error(data.error || 'Erro ao processar PDF')
-        }
-        await refreshProcessamentos()
-      } catch {
-        toast.error('Erro de conexão ao processar PDF')
-      } finally {
-        filaProcessandoRef.current = false
-      }
-    })()
-  }, [filaBatch, processamentos, refreshProcessamentos])
+    window.addEventListener(EVENTO_FILA_ATUALIZADA, onFila)
+    return () => window.removeEventListener(EVENTO_FILA_ATUALIZADA, onFila)
+  }, [refreshProcessamentos])
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return
@@ -447,9 +384,7 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {filaBatch && (
-        <FilaProcessamentoBanner fila={filaBatch} processamentos={processamentos} />
-      )}
+      <FilaProcessamentoBanner processamentos={processamentos} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Card>

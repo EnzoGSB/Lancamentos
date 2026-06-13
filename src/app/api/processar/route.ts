@@ -6,6 +6,8 @@ import { createPDFParser } from '@/lib/pdf-parse-server'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+const STATUS_OCUPADO = ['extraindo', 'analisando', 'processando'] as const
+
 export async function POST(request: NextRequest) {
   const { processamentoId } = await request.json()
 
@@ -21,6 +23,32 @@ export async function POST(request: NextRequest) {
 
   if (procError || !proc) {
     return NextResponse.json({ error: 'Processamento não encontrado' }, { status: 404 })
+  }
+
+  const { data: outroEmAndamento } = await supabaseAdmin
+    .from('processamentos_lancamentos')
+    .select('id, original_filename')
+    .in('status', [...STATUS_OCUPADO])
+    .neq('id', processamentoId)
+    .limit(1)
+    .maybeSingle()
+
+  if (outroEmAndamento) {
+    return NextResponse.json(
+      {
+        error: 'Aguarde o processamento anterior terminar.',
+        busy: true,
+        processandoId: outroEmAndamento.id,
+      },
+      { status: 409 }
+    )
+  }
+
+  if (!['pendente', 'erro'].includes(proc.status)) {
+    return NextResponse.json(
+      { error: `Processamento não pode ser iniciado no status "${proc.status}".` },
+      { status: 400 }
+    )
   }
 
   try {
