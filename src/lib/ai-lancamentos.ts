@@ -529,8 +529,8 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
     if (!emp) {
       return `|${norm(l.bairro)}|${norm(l.endereco).slice(0, 24)}|${tip}|${met}|${unidade}|${andar}|${val ?? ''}`
     }
-    // Com empreendimento: IGNORA bairro na chave (evita duplicata por célula mesclada errada).
-    if (unidade) return `${emp}|${tip}|${met}|u:${unidade}|${val ?? ''}`
+    // Com empreendimento + unidade: uma linha por apto (overlap de faixas traz campos parciais).
+    if (unidade) return `${emp}|u:${unidade}`
     if (andar) return `${emp}|${tip}|${met}|a:${andar}|${val ?? ''}`
     return `${emp}|${tip}|${met}|${val ?? ''}`
   }
@@ -608,6 +608,15 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
         for (let j = i + 1; j < grupo.length; j++) {
           if (usados.has(j)) continue
           const outro = grupo[j]
+
+          const unidadeBase = norm(base.unidade)
+          const unidadeOutro = norm(outro.unidade)
+          if (unidadeBase && unidadeOutro && unidadeBase === unidadeOutro) {
+            mesclarCampos(base, outro)
+            usados.add(j)
+            continue
+          }
+
           if (!precosSimilares(toNum(base.valor_minimo), toNum(outro.valor_minimo))) continue
 
           // Apartamentos distintos no mesmo bloco — nunca colapsar (ex.: unidades 404 e 406).
