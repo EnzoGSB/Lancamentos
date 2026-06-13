@@ -29,34 +29,41 @@ export async function tentarProcessarProximo(): Promise<{
 
   workerLocked = true
   try {
-    const processamentos = await buscarProcessamentos()
+    while (true) {
+      const processamentos = await buscarProcessamentos()
 
-    if (haProcessamentoEmAndamento(processamentos)) {
-      return { iniciou: false, ocupado: true }
-    }
+      if (haProcessamentoEmAndamento(processamentos)) {
+        return { iniciou: false, ocupado: true }
+      }
 
-    const proximo = proximoPendente(processamentos)
-    if (!proximo) return { iniciou: false }
+      const proximo = proximoPendente(processamentos)
+      if (!proximo) return { iniciou: false }
 
-    const res = await fetch('/api/processar', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ processamentoId: proximo.id }),
-    })
+      const res = await fetch('/api/processar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processamentoId: proximo.id }),
+      })
 
-    const data = await res.json().catch(() => ({}))
+      const data = await res.json().catch(() => ({}))
 
-    if (res.status === 409 && data.busy) {
-      return { iniciou: false, ocupado: true }
-    }
+      if (res.status === 409 && data.busy) {
+        return { iniciou: false, ocupado: true }
+      }
 
-    if (!res.ok) {
+      if (data.cancelled) {
+        emitirAtualizacao()
+        continue
+      }
+
+      if (!res.ok) {
+        emitirAtualizacao()
+        return { iniciou: true, id: proximo.id, erro: data.error || 'Erro ao processar PDF' }
+      }
+
       emitirAtualizacao()
-      return { iniciou: true, id: proximo.id, erro: data.error || 'Erro ao processar PDF' }
+      return { iniciou: true, id: proximo.id }
     }
-
-    emitirAtualizacao()
-    return { iniciou: true, id: proximo.id }
   } catch {
     emitirAtualizacao()
     return { iniciou: false, erro: 'Erro de conexão ao processar PDF' }

@@ -49,6 +49,17 @@ const FIELD_LABELS: Record<EditableField, string> = {
 
 type SelectedCell = { row: number; field: EditableField }
 
+type ValorOriginalCelula = { row: number; field: EditableField; valor: string }
+
+function valorParaComparacao(field: EditableField, v: unknown): string {
+  if (v == null || v === '') return ''
+  if (field === 'valor_minimo' || field === 'valor_maximo') {
+    const n = Number(v)
+    return Number.isFinite(n) ? String(n) : ''
+  }
+  return String(v).trim()
+}
+
 const inputClass = (selected: boolean, field?: EditableField) =>
   cn(
     'w-full min-w-0 text-xs border-0 rounded px-0.5 py-0.5 outline-none',
@@ -84,6 +95,7 @@ export default function MapeamentoPage() {
   const [undoStack, setUndoStack] = useState<LancamentoAI[][]>([])
   const undoStackRef = useRef(undoStack)
   undoStackRef.current = undoStack
+  const valorOriginalCelulaRef = useRef<ValorOriginalCelula | null>(null)
 
   const snapshotLancamentos = (items: LancamentoAI[]) =>
     items.map(l => ({ ...l }))
@@ -201,8 +213,9 @@ export default function MapeamentoPage() {
     }))
   }, [])
 
-  const selectCell = useCallback((row: number, field: EditableField) => {
+  const registrarFocusCelula = useCallback((row: number, field: EditableField, valor: unknown) => {
     setSelectedCell({ row, field })
+    valorOriginalCelulaRef.current = { row, field, valor: valorParaComparacao(field, valor) }
   }, [])
 
   const desfazer = useCallback(() => {
@@ -226,6 +239,40 @@ export default function MapeamentoPage() {
     setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
     setLancamentos(prev => prev.map(l => ({ ...l, [field]: valor })))
     toast.success(`"${FIELD_LABELS[field]}" aplicado em ${lancamentos.length} linhas`)
+  }, [selectedCell, lancamentos])
+
+  const aplicarParaSemelhantes = useCallback(() => {
+    if (!selectedCell) {
+      toast.error('Selecione uma célula antes de aplicar')
+      return
+    }
+    const { row, field } = selectedCell
+    const origem = valorOriginalCelulaRef.current
+    if (!origem || origem.row !== row || origem.field !== field) {
+      toast.error('Clique na célula editada antes de aplicar aos semelhantes')
+      return
+    }
+
+    const valorNovo = formatarCampo(field, lancamentos[row]?.[field])
+    const valorAntigo = origem.valor
+    let alteradas = 0
+
+    setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
+    setLancamentos(prev => prev.map(l => {
+      if (valorParaComparacao(field, l[field]) !== valorAntigo) return l
+      alteradas++
+      return { ...l, [field]: valorNovo }
+    }))
+
+    if (alteradas === 0) {
+      toast.error('Nenhuma linha com o valor original encontrada')
+      setUndoStack(prev => prev.slice(0, -1))
+      return
+    }
+
+    toast.success(
+      `"${FIELD_LABELS[field]}" aplicado em ${alteradas} linha${alteradas !== 1 ? 's' : ''} com "${valorAntigo || '—'}"`
+    )
   }, [selectedCell, lancamentos])
 
   useEffect(() => {
@@ -338,6 +385,19 @@ export default function MapeamentoPage() {
                 type="button"
                 variant="outline"
                 size="sm"
+                onClick={aplicarParaSemelhantes}
+                disabled={!selectedCell}
+                className="flex-1 sm:flex-none touch-manipulation"
+                title={selectedCell
+                  ? `Aplicar o valor editado da linha ${selectedCell.row + 1} só nas linhas com o mesmo valor original (${FIELD_LABELS[selectedCell.field]})`
+                  : 'Edite uma célula e aplique só nas linhas com o mesmo valor anterior'}
+              >
+                Aplicar aos semelhantes
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
                 onClick={desfazer}
                 disabled={undoStack.length === 0}
                 className="touch-manipulation"
@@ -412,7 +472,7 @@ export default function MapeamentoPage() {
                               title={(l[field] as string) ?? undefined}
                               onChange={e => updateLancamento(i, field, e.target.value)}
                               onFocus={() => {
-                                selectCell(i, field)
+                                registrarFocusCelula(i, field, l[field])
                                 if (field === 'metragem' && l.metragem) {
                                   const num = metragemParaEdicao(l.metragem)
                                   if (num !== l.metragem) updateLancamento(i, 'metragem', num)
@@ -428,7 +488,7 @@ export default function MapeamentoPage() {
                             type="number"
                             value={l.valor_minimo ?? ''}
                             onChange={e => updateLancamento(i, 'valor_minimo', e.target.value ? Number(e.target.value) : null)}
-                            onFocus={() => selectCell(i, 'valor_minimo')}
+                            onFocus={() => registrarFocusCelula(i, 'valor_minimo', l.valor_minimo)}
                             className={numberInputClass(selectedCell?.row === i && selectedCell?.field === 'valor_minimo', 'valor_minimo')}
                           />
                         </td>
@@ -437,7 +497,7 @@ export default function MapeamentoPage() {
                             type="number"
                             value={l.valor_maximo ?? ''}
                             onChange={e => updateLancamento(i, 'valor_maximo', e.target.value ? Number(e.target.value) : null)}
-                            onFocus={() => selectCell(i, 'valor_maximo')}
+                            onFocus={() => registrarFocusCelula(i, 'valor_maximo', l.valor_maximo)}
                             className={numberInputClass(selectedCell?.row === i && selectedCell?.field === 'valor_maximo', 'valor_maximo')}
                           />
                         </td>
@@ -446,7 +506,7 @@ export default function MapeamentoPage() {
                             type="text"
                             value={(l.desconto_margem as string) ?? ''}
                             onChange={e => updateLancamento(i, 'desconto_margem', e.target.value)}
-                            onFocus={() => selectCell(i, 'desconto_margem')}
+                            onFocus={() => registrarFocusCelula(i, 'desconto_margem', l.desconto_margem)}
                             onBlur={() => blurCampo(i, 'desconto_margem')}
                             className={inputClass(selectedCell?.row === i && selectedCell?.field === 'desconto_margem', 'desconto_margem')}
                           />

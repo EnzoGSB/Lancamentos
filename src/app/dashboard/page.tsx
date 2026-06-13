@@ -296,9 +296,11 @@ export default function DashboardPage() {
       const data = await res.json()
       if (!Array.isArray(data)) return
 
+      const visiveis = data.filter(p => p.status !== 'cancelado')
+
       setProcessamentos(prev => {
         let refreshCountNeeded = false
-        for (const p of data) {
+        for (const p of visiveis) {
           const old = prev.find(x => x.id === p.id)
           if (!old || old.status === p.status) continue
 
@@ -313,7 +315,7 @@ export default function DashboardPage() {
           }
         }
         if (refreshCountNeeded) queueMicrotask(refreshCount)
-        return data
+        return visiveis
       })
     } catch {
       // silencioso no polling
@@ -323,7 +325,7 @@ export default function DashboardPage() {
   useEffect(() => {
     fetch('/api/processamentos')
       .then(r => r.json())
-      .then(data => setProcessamentos(Array.isArray(data) ? data : []))
+      .then(data => setProcessamentos(Array.isArray(data) ? data.filter(p => p.status !== 'cancelado') : []))
       .catch(() => setProcessamentos([]))
       .finally(() => setLoading(false))
 
@@ -360,6 +362,7 @@ export default function DashboardPage() {
       setProcessamentos(prev => prev.filter(item => item.id !== deleteTarget.id))
       setDeleteTarget(null)
       refreshCount()
+      window.dispatchEvent(new CustomEvent(EVENTO_FILA_ATUALIZADA))
       toast.success(
         data.lancamentosRemovidos > 0
           ? `Processamento apagado (${data.lancamentosRemovidos} lançamentos removidos).`

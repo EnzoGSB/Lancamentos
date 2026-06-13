@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { analisarPDF, processarSingle, processarMulti } from '@/lib/ai-lancamentos'
 import { createPDFParser } from '@/lib/pdf-parse-server'
+import { STATUS_SLOT_OCUPADO } from '@/lib/fila-processamento'
+import {
+  ProcessamentoCanceladoError,
+  finalizarProcessamentoCancelado,
+  verificarProcessamentoAtivo,
+} from '@/lib/processamento-cancelado'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
-
-const STATUS_OCUPADO = ['extraindo', 'analisando', 'processando'] as const
 
 export async function POST(request: NextRequest) {
   const { processamentoId } = await request.json()
@@ -28,7 +32,7 @@ export async function POST(request: NextRequest) {
   const { data: outroEmAndamento } = await supabaseAdmin
     .from('processamentos_lancamentos')
     .select('id, original_filename')
-    .in('status', [...STATUS_OCUPADO])
+    .in('status', [...STATUS_SLOT_OCUPADO])
     .neq('id', processamentoId)
     .limit(1)
     .maybeSingle()
@@ -52,6 +56,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
+
     await supabaseAdmin
       .from('processamentos_lancamentos')
       .update({ status: 'extraindo' })
@@ -76,12 +82,16 @@ export async function POST(request: NextRequest) {
       throw new Error('Texto extraído do PDF está vazio ou muito curto. O PDF pode ser escaneado ou protegido.')
     }
 
+    await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
+
     await supabaseAdmin
       .from('processamentos_lancamentos')
       .update({ status: 'analisando' })
       .eq('id', processamentoId)
 
     const analise = await analisarPDF(extractedText, proc.original_filename || '')
+
+    await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
 
     await supabaseAdmin
       .from('processamentos_lancamentos')
@@ -91,6 +101,8 @@ export async function POST(request: NextRequest) {
     const lancamentos = analise.tipo === 'single'
       ? await processarSingle(buffer, analise, extractedText)
       : await processarMulti(buffer, analise, extractedText)
+
+    await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
 
     await supabaseAdmin
       .from('processamentos_lancamentos')
@@ -103,6 +115,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ analise, lancamentos })
 
   } catch (err) {
+    if (err instanceof ProcessamentoCanceladoError) {
+      await finalizarProcessamentoCancelado(supabaseAdmin, processamentoId)
+      return NextResponse.json({ cancelled: true }, { status: 200 })
+    }
     const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido'
     await supabaseAdmin
       .from('processamentos_lancamentos')

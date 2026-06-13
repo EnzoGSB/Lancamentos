@@ -190,6 +190,8 @@ Danti revelou: prompt enviesado para o Cyrela trazia 29 de ~50 linhas).
   valor único no bloco (tipologia, preço quando iguais). Não inventa unidade/metragem
   por linha — isso vem da extração visual.
 - **`fundirSemelhantes` (v1.3)**: não funde apartamentos com `unidade` distinta.
+- **`REGRA_SOMENTE_TABELAS` (v1.4)**: extrair só blocos com cabeçalho tabular;
+  ignorar plantas baixas, mapas coloridos e grades sem colunas de preço/dados.
 
 ---
 
@@ -261,3 +263,6 @@ Se algum desses regredir, a alteração que causou isso deve ser revertida.
   unidade vs agregada por tipologia; (c) `completarColunasPorBloco` propaga células
   mescladas e colunas com valor único; (d) `fundirSemelhantes` não colapsa
   apartamentos com `unidade` distinta.
+- **v1.4** — Somente blocos tabulares (decisão explícita do dono). `REGRA_SOMENTE_TABELAS`
+  nos prompts: extrair apenas tabelas com cabeçalho de colunas; ignorar plantas,
+  mapas coloridos e grades apto+m² sem estrutura tabular de preço/dados.

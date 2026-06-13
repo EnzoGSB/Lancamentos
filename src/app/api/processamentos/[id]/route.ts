@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { STATUS_CANCELAVEL } from '@/lib/processamento-cancelado'
 
 export async function GET(
   _request: NextRequest,
@@ -52,13 +53,17 @@ export async function DELETE(
 
   const { data: proc, error: procError } = await supabaseAdmin
     .from('processamentos_lancamentos')
-    .select('id, storage_path, original_filename')
+    .select('id, storage_path, original_filename, status')
     .eq('id', id)
     .single()
 
   if (procError || !proc) {
     return NextResponse.json({ error: 'Processamento não encontrado' }, { status: 404 })
   }
+
+  const emExecucao = STATUS_CANCELAVEL.includes(
+    proc.status as (typeof STATUS_CANCELAVEL)[number]
+  )
 
   try {
     const { count, error: lancError } = await supabaseAdmin
@@ -74,6 +79,27 @@ export async function DELETE(
         .remove([proc.storage_path])
 
       if (storageError) throw new Error(`Erro ao apagar PDF: ${storageError.message}`)
+    }
+
+    if (emExecucao) {
+      const { error: cancelError } = await supabaseAdmin
+        .from('processamentos_lancamentos')
+        .update({
+          status: 'cancelado',
+          erro: 'Cancelado ao apagar o PDF',
+          storage_path: null,
+        })
+        .eq('id', id)
+
+      if (cancelError) throw new Error(cancelError.message)
+
+      return NextResponse.json({
+        ok: true,
+        id,
+        cancelado: true,
+        lancamentosRemovidos: count ?? 0,
+        arquivo: proc.original_filename,
+      })
     }
 
     const { error: deleteError } = await supabaseAdmin

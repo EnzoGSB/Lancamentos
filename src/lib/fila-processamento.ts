@@ -5,8 +5,11 @@ export type ProcessamentoMin = {
   original_filename?: string | null
 }
 
-/** Status que ocupam o “slot” único de extração com IA. */
+/** Status visíveis como “processando” na UI. */
 export const STATUS_PROCESSAMENTO_OCUPADO = ['extraindo', 'analisando', 'processando'] as const
+
+/** Status que bloqueiam o próximo da fila (inclui cancelamento pendente de encerramento). */
+export const STATUS_SLOT_OCUPADO = [...STATUS_PROCESSAMENTO_OCUPADO, 'cancelado'] as const
 
 export const STATUS_EM_PROGRESSO = [
   ...STATUS_PROCESSAMENTO_OCUPADO,
@@ -23,7 +26,7 @@ function ordenarPendentes(pendentes: ProcessamentoMin[]) {
 
 export function haProcessamentoEmAndamento(processamentos: ProcessamentoMin[]): boolean {
   return processamentos.some(p =>
-    STATUS_PROCESSAMENTO_OCUPADO.includes(p.status as (typeof STATUS_PROCESSAMENTO_OCUPADO)[number])
+    STATUS_SLOT_OCUPADO.includes(p.status as (typeof STATUS_SLOT_OCUPADO)[number])
   )
 }
 

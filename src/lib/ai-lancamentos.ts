@@ -74,9 +74,16 @@ const REGRA_CONSISTENCIA_COLUNAS = `CONSISTÊNCIA DE COLUNAS NO BLOCO TABULAR:
 - Mapeamento comum: UNIDADES/Unidade/Apto/Ap. → unidade (número do apto); METRAGEM/Área/m² privativa → metragem; TIPO/TIPOLOGIA → tipologia; POR/Preço/Valor de venda → valor_minimo; DE/Valor tabela → valor_maximo quando houver desconto; STATUS/Entrega → data_entrega; ENDEREÇO → endereco.
 - Tabela com coluna de apartamentos individuais (404, 406, 501…): UMA linha JSON por linha da tabela — NÃO agregue por tipologia. Preencha unidade em todas as linhas.`
 
+const REGRA_SOMENTE_TABELAS = `SOMENTE BLOCOS TABULARES — ignore plantas e mapas coloridos:
+- Extraia APENAS de blocos com estrutura de TABELA: linha de cabeçalho de colunas alinhadas (ex.: Empreendimento, Unidade, Dorm./Tipologia, Vagas, Metragem/Área, Preço/Valor Total, Situação/Status, Entrega…) seguida de linhas de dados em colunas.
+- IGNORE completamente e NÃO produza linhas JSON a partir de: plantas baixas, mapas de disponibilidade, grades de unidades coloridas (vermelho/verde/outras cores), blocos só com número de apto + m² sem cabeçalho tabular de preço/dados, fachadas, legendas visuais e diagramas de pavimento.
+- Células coloridas de disponibilidade NÃO são tabela de vendas — mesmo listando unidades. A fonte correta é a tabela tabular com cabeçalho (ex.: UNIDADE | ÁREA PRIVATIVA | GARAGEM | SITUAÇÃO | VALOR TOTAL).
+- TEXTO NATIVO: não crie linhas a partir de unidades que aparecem só em plantas/mapas; use-o apenas para COMPLETAR campos de linhas já visíveis em tabelas tabulares válidas.`
+
 const REGRA_COMPLETUDE = `COMPLETUDE vs INVENÇÃO (prioridade máxima):
+- ${REGRA_SOMENTE_TABELAS}
 - Analise a tabela com MUITO cuidado: estrutura visual, alinhamento de colunas, células mescladas, blocos por empreendimento e tabelas largas com preço à direita.
-- Para CADA linha de imóvel VISÍVEL, produza UMA linha JSON — mesmo parcial, incompleta ou ambígua.
+- Para CADA linha de dados em bloco tabular VÁLIDO visível, produza UMA linha JSON — mesmo parcial, incompleta ou ambígua.
 - NUNCA omita linhas por incerteza ou dados faltando. Na dúvida, INCLUA a linha e deixe os campos ausentes como null.
 - Campo realmente ausente no documento → null. Vagas = "0" somente quando a tabela indicar zero vagas.
 - NUNCA invente: não chute empreendimento, bairro, preço, unidade ou andar que não constem no PDF/texto nativo para aquela linha.
@@ -119,7 +126,7 @@ ${LANCAMENTO_SCHEMA}
 
 Regras CRÍTICAS:
 0. ${REGRA_COMPLETUDE}
-1. Extraia TODOS os blocos visíveis nesta faixa — NÃO pare no primeiro. Tabela com coluna UNIDADES/Apto: UMA linha JSON por linha — preencha unidade, metragem, tipologia e preço em TODAS as linhas do bloco.
+1. Extraia TODOS os blocos tabulares válidos visíveis nesta faixa — NÃO pare no primeiro. NÃO extraia de plantas ou mapas coloridos. Tabela com coluna UNIDADES/Apto: UMA linha JSON por linha — preencha unidade, metragem, tipologia e preço em TODAS as linhas do bloco.
 2. Tabelas com coluna UNIDADES (andares 1º–26º), ÁREA PRIVATIVA, PREÇO DE VENDA e colunas de pagamento (ATO, MENSAIS, FINANCIAMENTO) são tabelas de PREÇO DE UNIDADES — NÃO descarte por parecer "só pagamento". O PREÇO DE VENDA de cada andar é o valor do imóvel.
 3. Variantes distintas (ex: "2 DORM - FINAL 1" vs "2 DORM - FINAL 2", metragens diferentes) = LINHAS SEPARADAS. Inclua o sufixo completo na tipologia (ex: "2 dorms FINAL 2").
 4. Bloco com preços por andar: UMA linha por variante — valor_minimo = menor PREÇO DE VENDA da coluna, valor_maximo = maior, andar = faixa "1º-26º" (ou intervalo visível), metragem da coluna ÁREA PRIVATIVA, vagas da coluna VAGAS.
@@ -148,7 +155,7 @@ Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
 0. ${REGRA_COMPLETUDE}
 1. CÉLULAS MESCLADAS: região/bairro/empreendimento à esquerda usam células mescladas. Cada LINHA DE DADOS herda o empreendimento e o bairro do bloco ao qual pertence visualmente — NÃO do bloco vizinho acima.
 2. BAIRRO vs EMPREENDIMENTO: o bairro de cada linha é o da MESMA linha/bloco do empreendimento. Se o cabeçalho mesclado diz "Campo Belo" mas a linha é "Aura Moema", o bairro correto é Moema (o nome do empreendimento indica o bairro). NUNCA atribua "Campo Belo" a empreendimentos de outro bairro só por proximidade na tabela.
-3. EXTRAIA TODOS os empreendimentos e TODAS as linhas de dados desta faixa — NÃO descarte nenhum bloco, mesmo que o layout seja incomum. Blocos pequenos no meio ou no fim da faixa também contam — não pare após o primeiro empreendimento.
+3. EXTRAIA TODOS os empreendimentos e TODAS as linhas de dados tabulares válidos desta faixa — NÃO descarte tabelas com cabeçalho de colunas, mesmo que o layout seja incomum. Blocos pequenos no meio ou no fim da faixa também contam — não pare após o primeiro empreendimento. NÃO extraia de plantas/mapas coloridos (ver regra de blocos tabulares).
 4. Se o bloco tem coluna UNIDADES/Apto com números individuais: UMA linha JSON por linha — preencha unidade em todas; NÃO agregue. Agregue por tipologia SOMENTE quando NÃO houver coluna de apartamentos individuais e várias linhas forem claramente o MESMO empreendimento com a MESMA tipologia (ex.: preços por andar). Se cada linha é empreendimento ou unidade distinta, produza UMA linha JSON por linha visível.
 5. CAMPO unidade: só número/código do apto (ex: 72-T2, 112, 241). Quando a coluna UNIDADES existir no bloco, TODAS as linhas devem ter unidade preenchida.
 6. ${REGRA_TIPOLOGIA_UNIDADE}
@@ -688,7 +695,7 @@ async function _extrairDePdf(
                   file_data: `data:application/pdf;base64,${pdfBase64}`,
                 },
               },
-              { type: 'text', text: `${contexto}\n\nAnalise o PDF com cuidado e extraia TODAS as tipologias/linhas de imóvel visíveis — uma por linha. Se o bloco tem coluna UNIDADES/METRAGEM/TIPO/PREÇO, preencha esses campos em TODAS as linhas do bloco (célula vazia = null). Inclua linhas incompletas. Não pule linhas ambíguas.${blocoTexto}` },
+              { type: 'text', text: `${contexto}\n\nAnalise o PDF com cuidado. Extraia linhas SOMENTE de tabelas tabulares com cabeçalho de colunas (Unidade, Metragem, Preço, etc.) — ignore plantas e mapas coloridos. Uma linha JSON por linha de tabela válida. Se o bloco tem coluna UNIDADES/METRAGEM/TIPO/PREÇO, preencha em TODAS as linhas (célula vazia = null).${blocoTexto}` },
             ],
           },
         ],
@@ -742,7 +749,7 @@ async function _extrairDeImagem(
             role: 'user',
             content: [
               { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
-              { type: 'text', text: `${contexto}\n\nEsta imagem é uma FAIXA (recorte horizontal) de uma página. Analise a tabela com cuidado. Extraia TODAS as linhas de imóvel VISÍVEIS nesta faixa. Se o cabeçalho do bloco tem coluna UNIDADES/METRAGEM/TIPO/PREÇO, preencha em TODAS as linhas visíveis (célula vazia = null). Inclua linhas incompletas. Não pule linhas ambíguas. Não adicione linhas de fora da faixa.${blocoTexto}` },
+              { type: 'text', text: `${contexto}\n\nEsta imagem é uma FAIXA (recorte horizontal) de uma página. Extraia linhas SOMENTE de tabelas tabulares com cabeçalho de colunas — ignore plantas e mapas coloridos (vermelho/verde). Uma linha JSON por linha de tabela válida visível nesta faixa. Preencha colunas presentes em todas as linhas do bloco (célula vazia = null). Não adicione linhas de fora da faixa nem de plantas.${blocoTexto}` },
             ],
           },
         ],
