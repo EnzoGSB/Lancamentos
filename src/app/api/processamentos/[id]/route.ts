@@ -87,7 +87,6 @@ export async function DELETE(
         .update({
           status: 'cancelado',
           erro: 'Cancelado ao apagar o PDF',
-          storage_path: null,
         })
         .eq('id', id)
 
