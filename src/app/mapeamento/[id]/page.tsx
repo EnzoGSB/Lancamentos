@@ -71,6 +71,7 @@ type DragState = {
   didDrag: boolean
   ctrlToggle?: boolean
   cellsBeforeDrag?: Set<string>
+  preserveSelection?: boolean
 }
 
 function fieldIndex(field: EditableField): number {
@@ -106,12 +107,6 @@ function cellsInRange(anchor: CellCoord, focus: CellCoord): Set<string> {
 function parseCellKey(key: string): CellCoord {
   const idx = key.indexOf(':')
   return { row: Number(key.slice(0, idx)), field: key.slice(idx + 1) as EditableField }
-}
-
-function rowsFromSelectedCells(cells: Set<string>): Set<number> {
-  const rows = new Set<number>()
-  for (const key of cells) rows.add(parseCellKey(key).row)
-  return rows
 }
 
 function sanitizeValor(field: EditableField, value: unknown): unknown {
@@ -172,12 +167,18 @@ export default function MapeamentoPage() {
   const [selectedCell, setSelectedCell] = useState<CellCoord | null>(null)
   const [selectedCells, setSelectedCells] = useState<Set<string>>(() => new Set())
   const [selectionAnchor, setSelectionAnchor] = useState<CellCoord | null>(null)
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(() => new Set())
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDraggingCells, setIsDraggingCells] = useState(false)
   const [undoStack, setUndoStack] = useState<LancamentoAI[][]>([])
 
   const undoStackRef = useRef(undoStack)
   undoStackRef.current = undoStack
+  const selectedCellsRef = useRef(selectedCells)
+  selectedCellsRef.current = selectedCells
+  const selectedCellRef = useRef(selectedCell)
+  selectedCellRef.current = selectedCell
+  const lastRowClickRef = useRef<number | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
   const skipNextFocusSelectionRef = useRef(false)
   const multiEditUndoPushedRef = useRef(false)
@@ -189,6 +190,7 @@ export default function MapeamentoPage() {
     setSelectedCell(null)
     setSelectedCells(new Set())
     setSelectionAnchor(null)
+    setSelectedRows(new Set())
     multiEditUndoPushedRef.current = false
   }, [])
 
@@ -236,6 +238,8 @@ export default function MapeamentoPage() {
 
     const ctrl = e.ctrlKey || e.metaKey
     const shift = e.shiftKey
+    const key = cellKey(row, field)
+    const emSelecaoMultipla = !ctrl && !shift && selectedCells.size > 1 && selectedCells.has(key)
     const anchor = shift && !ctrl
       ? (selectionAnchor ?? selectedCell ?? { row, field })
       : { row, field }
@@ -247,11 +251,12 @@ export default function MapeamentoPage() {
       didDrag: false,
       ctrlToggle: ctrl,
       cellsBeforeDrag: ctrl ? new Set(selectedCells) : undefined,
+      preserveSelection: emSelecaoMultipla,
     }
     setIsDraggingCells(true)
     setSelectedCell({ row, field })
 
-    if (ctrl) return
+    if (ctrl || emSelecaoMultipla) return
 
     setSelectedCells(cellsInRange(anchor, { row, field }))
     if (!shift) setSelectionAnchor(anchor)
@@ -301,10 +306,16 @@ export default function MapeamentoPage() {
     if (drag?.ctrlToggle && !didDrag) {
       skipNextFocusSelectionRef.current = true
       alternarCelulaCtrl(row, field)
+    } else if (drag?.preserveSelection && !didDrag) {
+      skipNextFocusSelectionRef.current = true
     }
 
     if (!didDrag) {
-      e.currentTarget.querySelector('input')?.focus()
+      const input = e.currentTarget.querySelector('input')
+      input?.focus()
+      if (drag?.preserveSelection && input) {
+        input.select()
+      }
     }
   }, [alternarCelulaCtrl])
 
@@ -488,11 +499,17 @@ export default function MapeamentoPage() {
   const registrarFocusCelula = useCallback((
     row: number,
     field: EditableField,
-    valor: unknown,
+    _valor: unknown,
     e?: React.FocusEvent<HTMLInputElement>
   ) => {
     if (skipNextFocusSelectionRef.current) {
       skipNextFocusSelectionRef.current = false
+      multiEditUndoPushedRef.current = false
+      return
+    }
+    if (selectedCells.size > 1 && selectedCells.has(cellKey(row, field))) {
+      multiEditUndoPushedRef.current = false
+      setSelectedCell({ row, field })
       return
     }
     multiEditUndoPushedRef.current = false
@@ -500,7 +517,40 @@ export default function MapeamentoPage() {
     const shift = !!mod?.shiftKey
     const anchor = shift ? (selectionAnchor ?? selectedCell ?? undefined) : undefined
     definirSelecao(row, field, { shift, anchor })
-  }, [definirSelecao, selectionAnchor, selectedCell])
+  }, [definirSelecao, selectionAnchor, selectedCell, selectedCells])
+
+  const toggleLinhaSelecionada = useCallback((row: number, shift: boolean) => {
+    setSelectedRows(prev => {
+      const next = new Set(prev)
+      if (shift && lastRowClickRef.current != null) {
+        for (const r of linhasNoIntervalo(lastRowClickRef.current, row)) next.add(r)
+      } else if (next.has(row)) {
+        next.delete(row)
+      } else {
+        next.add(row)
+      }
+      return next
+    })
+    lastRowClickRef.current = row
+  }, [])
+
+  const toggleTodasLinhas = useCallback(() => {
+    setSelectedRows(prev => {
+      if (prev.size === lancamentos.length) return new Set()
+      return new Set(lancamentos.map((_, i) => i))
+    })
+  }, [lancamentos.length])
+
+  const focarInputCelula = useCallback((row: number, field: EditableField) => {
+    requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        `[data-cell="${cellKey(row, field)}"]`
+      )
+      if (!input) return
+      input.focus()
+      input.select()
+    })
+  }, [])
 
   const desfazer = useCallback(() => {
     setUndoStack(prev => {
@@ -526,41 +576,60 @@ export default function MapeamentoPage() {
     toast.success(`"${FIELD_LABELS[field]}" aplicado em ${lancamentos.length} linhas`)
   }, [selectedCell, lancamentos])
 
-  const linhasSelecionadas = rowsFromSelectedCells(selectedCells)
-
-  const apagarImoveisSelecionados = useCallback(() => {
-    const rows = rowsFromSelectedCells(selectedCells)
-    if (rows.size === 0) {
-      toast.error('Selecione células dos imóveis que deseja apagar')
+  const apagarLinhasSelecionadas = useCallback(() => {
+    if (selectedRows.size === 0) {
+      toast.error('Selecione pelo menos uma linha para apagar')
       return
     }
-    if (lancamentos.length - rows.size < 1) {
+    if (lancamentos.length - selectedRows.size < 1) {
       toast.error('Deixe pelo menos um imóvel na tabela')
       return
     }
 
     setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
-    setLancamentos(prev => prev.filter((_, i) => !rows.has(i)))
+    setLancamentos(prev => prev.filter((_, i) => !selectedRows.has(i)))
     limparSelecoes()
     setDeleteConfirmOpen(false)
-    toast.success(`${rows.size} imóve${rows.size !== 1 ? 'is' : 'l'} removido${rows.size !== 1 ? 's' : ''}`)
-  }, [selectedCells, lancamentos, limparSelecoes])
+    toast.success(`${selectedRows.size} imóve${selectedRows.size !== 1 ? 'is' : 'l'} removido${selectedRows.size !== 1 ? 's' : ''}`)
+  }, [selectedRows, lancamentos, limparSelecoes])
 
   useEffect(() => {
     if (status !== 'aguardando_confirmacao') return
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key !== 'z' || e.shiftKey) return
       const tag = (e.target as HTMLElement)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
-      if (undoStackRef.current.length === 0) return
-      e.preventDefault()
-      desfazer()
+      const emInput = tag === 'INPUT' || tag === 'TEXTAREA'
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        if (emInput) return
+        if (undoStackRef.current.length === 0) return
+        e.preventDefault()
+        desfazer()
+        return
+      }
+
+      const cells = selectedCellsRef.current
+      const focus = selectedCellRef.current
+      if (cells.size <= 1 || !focus || emInput) return
+
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        updateValorSelecao(focus.row, focus.field, e.key)
+        focarInputCelula(focus.row, focus.field)
+        return
+      }
+
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault()
+        const vazio = focus.field === 'valor_minimo' || focus.field === 'valor_maximo' ? null : ''
+        updateValorSelecao(focus.row, focus.field, vazio)
+        focarInputCelula(focus.row, focus.field)
+      }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [status, desfazer])
+  }, [status, desfazer, updateValorSelecao, focarInputCelula])
 
   const celulaProps = (row: number, field: EditableField) => ({
     onPointerDown: (e: React.PointerEvent<HTMLTableCellElement>) => iniciarArraste(row, field, e),
@@ -583,6 +652,7 @@ export default function MapeamentoPage() {
       >
         <input
           type="text"
+          data-cell={cellKey(row, field)}
           inputMode={field === 'metragem' ? 'decimal' : undefined}
           value={field === 'metragem'
             ? metragemParaEdicao(l[field] as string)
@@ -680,7 +750,7 @@ export default function MapeamentoPage() {
           <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-between items-stretch sm:items-center gap-3 mb-4">
             <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3">
               <p className="text-sm text-gray-500">
-                Arraste ou Ctrl+clique para selecionar células. Digite para preencher todas de uma vez; Apagar remove os imóveis das linhas selecionadas.
+                Arraste ou Ctrl+clique para selecionar células e digite para preencher todas. Use a caixa à esquerda para apagar imóveis inteiros.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -701,11 +771,11 @@ export default function MapeamentoPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => setDeleteConfirmOpen(true)}
-                  disabled={linhasSelecionadas.size === 0}
+                  disabled={selectedRows.size === 0}
                   className="flex-1 sm:flex-none touch-manipulation text-red-700 hover:text-red-800"
                 >
                   <Trash2 className="size-3.5 mr-1" />
-                  Apagar{linhasSelecionadas.size > 0 ? ` (${linhasSelecionadas.size})` : ''}
+                  Apagar{selectedRows.size > 0 ? ` (${selectedRows.size})` : ''}
                 </Button>
                 <Button
                   type="button"
@@ -723,10 +793,12 @@ export default function MapeamentoPage() {
               {selectedCells.size > 0 && (
                 <span className="text-xs text-blue-600">
                   {selectedCells.size} célula{selectedCells.size !== 1 ? 's' : ''} selecionada{selectedCells.size !== 1 ? 's' : ''}
-                  {linhasSelecionadas.size > 0
-                    ? ` · ${linhasSelecionadas.size} imóve${linhasSelecionadas.size !== 1 ? 'is' : 'l'} para apagar`
-                    : ''}
                   {selectedCell ? ` · foco: ${FIELD_LABELS[selectedCell.field]}, linha ${selectedCell.row + 1}` : ''}
+                </span>
+              )}
+              {selectedRows.size > 0 && (
+                <span className="text-xs text-red-600">
+                  {selectedRows.size} imóve{selectedRows.size !== 1 ? 'is' : 'l'} marcado{selectedRows.size !== 1 ? 's' : ''} para apagar
                 </span>
               )}
             </div>
@@ -744,10 +816,10 @@ export default function MapeamentoPage() {
             open={deleteConfirmOpen}
             onOpenChange={setDeleteConfirmOpen}
             title="Apagar imóveis selecionados?"
-            description={`${linhasSelecionadas.size} imóvel${linhasSelecionadas.size !== 1 ? 'is' : ''} será${linhasSelecionadas.size !== 1 ? 'ão' : ''} removido${linhasSelecionadas.size !== 1 ? 's' : ''} da revisão. Você pode desfazer antes de salvar no banco.`}
+            description={`${selectedRows.size} imóvel${selectedRows.size !== 1 ? 'is' : ''} será${selectedRows.size !== 1 ? 'ão' : ''} removido${selectedRows.size !== 1 ? 's' : ''} da revisão. Você pode desfazer antes de salvar no banco.`}
             confirmLabel="Apagar"
             variant="destructive"
-            onConfirm={apagarImoveisSelecionados}
+            onConfirm={apagarLinhasSelecionadas}
           />
 
           <Card>
@@ -758,6 +830,7 @@ export default function MapeamentoPage() {
               <div className="md:p-1 max-md:overflow-x-auto max-md:overscroll-x-contain">
                 <table className="w-full table-fixed text-xs max-md:min-w-[1150px]">
                   <colgroup>
+                    <col style={{ width: '3%' }} />
                     <col style={{ width: '3%' }} />
                     <col style={{ width: '8%' }} />
                     <col style={{ width: '12%' }} />
@@ -774,6 +847,20 @@ export default function MapeamentoPage() {
                   </colgroup>
                   <thead>
                     <tr className="border-b bg-gray-50">
+                      <th className="p-1 text-center">
+                        <input
+                          type="checkbox"
+                          checked={lancamentos.length > 0 && selectedRows.size === lancamentos.length}
+                          ref={el => {
+                            if (el) {
+                              el.indeterminate = selectedRows.size > 0 && selectedRows.size < lancamentos.length
+                            }
+                          }}
+                          onChange={toggleTodasLinhas}
+                          title="Selecionar todas as linhas"
+                          className="size-3.5 cursor-pointer"
+                        />
+                      </th>
                       <th className="text-left p-1 font-medium text-gray-500 leading-tight">#</th>
                       <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Construtora</th>
                       <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Empreendimento</th>
@@ -795,9 +882,18 @@ export default function MapeamentoPage() {
                         key={i}
                         className={cn(
                           'border-b hover:bg-gray-50',
-                          linhasSelecionadas.has(i) && 'bg-red-50/40'
+                          selectedRows.has(i) && 'bg-red-50/40'
                         )}
                       >
+                        <td className="p-1 text-center align-top">
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.has(i)}
+                            onClick={e => toggleLinhaSelecionada(i, e.shiftKey)}
+                            title="Selecionar imóvel para apagar (Shift estende)"
+                            className="size-3.5 cursor-pointer"
+                          />
+                        </td>
                         <td className="p-1 text-gray-400 tabular-nums">{i + 1}</td>
                         {TEXT_FIELDS.map(field => renderCelula(i, field, l))}
                         {(['valor_minimo', 'valor_maximo'] as const).map(field => (
@@ -811,6 +907,7 @@ export default function MapeamentoPage() {
                           >
                             <input
                               type="number"
+                              data-cell={cellKey(i, field)}
                               value={l[field] ?? ''}
                               onChange={e => updateValorSelecao(
                                 i,
