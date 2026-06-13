@@ -3,6 +3,7 @@ import { openai, AI_MODEL_ANALYZER, AI_MODEL_EXTRACTOR } from './openai'
 import { createPDFParser } from './pdf-parse-server'
 import type { AnaliseIA, LancamentoAI } from './types'
 import { normalizarLancamentos } from './formatar-lancamento'
+import { lerConcorrenciaFaixas } from './extracao-concorrencia'
 
 const AI_TEMPERATURE = 0
 const MAX_TENTATIVAS_EXTRACAO = 3
@@ -23,7 +24,7 @@ async function extrairFaixasComCobertura<T>(
 
   const results: LancamentoAI[][] = new Array(items.length)
 
-  await mapWithConcurrency(items, 4, async (item, i) => {
+  await mapWithConcurrency(items, lerConcorrenciaFaixas(), async (item, i) => {
     results[i] = await extractFn(item, i)
   })
 

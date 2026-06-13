@@ -46,6 +46,15 @@ export function removerSufixoLixoTipologia(val: string): string {
   return s
 }
 
+/** Remove metadados de PDF (paginação, ficha) colados na tipologia — não altera a extração da IA. */
+function removerMetadadosTipologia(val: string): string {
+  let s = val.trim().replace(/\s+/g, ' ')
+  s = s.replace(/\s*--\s*\d+\s+of\s+\d+\s*--.*$/i, '')
+  s = s.replace(/\s*--\s*Ficha\s+[A-Za-z0-9]+\s*$/i, '')
+  s = s.replace(/\s*-\s*Ficha\s+[A-Za-z0-9]+\s*$/i, '')
+  return s.trim()
+}
+
 /** Truncamentos padronizados em tabelões — dedução segura, não invenção arbitrária. */
 export function completarTipologiaTruncada(val: string): string {
   let s = val.trim().replace(/\s+/g, ' ')
@@ -148,8 +157,8 @@ export function resolverTipologia(
   if (!val?.trim()) return null
   const limpa = removerSufixoLixoTipologia(val)
   const doTexto = buscarTipologiaNoTextoNativo(limpa, textoNativo)
-  const base = doTexto ?? completarTipologiaTruncada(limpa)
-  return formatarTipologiaInterno(base)
+  const base = completarTipologiaTruncada(doTexto ?? limpa)
+  return formatarTipologiaInterno(removerMetadadosTipologia(base))
 }
 
 function capitalizarMes(mes: string) {
@@ -273,9 +282,10 @@ export function formatarMetragem(val: string | null | undefined): string | null 
 function formatarTipologiaInterno(val: string): string {
   let s = val.trim().replace(/\s+/g, ' ')
 
-  if (/^studio\b/i.test(s)) {
-    s = s.replace(/^studio/i, 'Studio')
-  }
+  s = s.replace(/^studios?(?=\s|--|$)/i, 'Studio')
+
+  s = s.replace(/\s*-\s*FINAL\s+/gi, ' FINAL ')
+  s = s.replace(/\bFINAL\s*(\d+)\b/gi, 'FINAL $1')
 
   s = s.replace(/\b(\d+)\s*dorms?\.?\b/gi, '$1 dorms')
   s = s.replace(/\b(\d+)\s*suítes\b/gi, '$1 suítes')
@@ -286,12 +296,11 @@ function formatarTipologiaInterno(val: string): string {
     s = s.replace(new RegExp(`\\b${mod}\\b`, 'gi'), mod)
   }
 
-  return s
+  return s.replace(/\s+/g, ' ').trim()
 }
 
 export function formatarTipologia(val: string | null | undefined): string | null {
-  if (!val?.trim()) return null
-  return formatarTipologiaInterno(completarTipologiaTruncada(removerSufixoLixoTipologia(val)))
+  return resolverTipologia(val, '')
 }
 
 export function formatarDataEntrega(val: string | null | undefined): string | null {
@@ -335,7 +344,7 @@ export function formatarCampo(
   if (typeof value !== 'string' && value != null && field !== 'vagas') return value
 
   switch (field) {
-    case 'tipologia': return formatarTipologia(value as string)
+    case 'tipologia': return resolverTipologia(value as string, '')
     case 'andar': return formatarAndar(value as string)
     case 'metragem': return formatarMetragem(value as string)
     case 'data_entrega': return formatarDataEntrega(value as string)
@@ -343,6 +352,11 @@ export function formatarCampo(
     case 'desconto_margem': return formatarDesconto(value as string)
     default: return value
   }
+}
+
+function formatarTextoCampo(val: string | null | undefined): string | null {
+  if (!val?.trim()) return null
+  return val.trim().replace(/\s+/g, ' ')
 }
 
 export function normalizarLancamento(
@@ -357,10 +371,10 @@ export function normalizarLancamento(
     data_entrega: formatarDataEntrega(l.data_entrega),
     vagas: formatarVagas(l.vagas),
     desconto_margem: formatarDesconto(l.desconto_margem),
-    unidade: l.unidade?.trim() || null,
-    empreendimento: l.empreendimento?.trim() || l.empreendimento,
-    construtora: l.construtora?.trim() || l.construtora,
-    bairro: l.bairro?.trim() || null,
+    unidade: formatarTextoCampo(l.unidade),
+    empreendimento: formatarTextoCampo(l.empreendimento) ?? l.empreendimento,
+    construtora: formatarTextoCampo(l.construtora) ?? l.construtora,
+    bairro: formatarTextoCampo(l.bairro),
   }
 }
 

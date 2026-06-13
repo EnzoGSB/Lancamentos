@@ -8,6 +8,8 @@ import {
   finalizarProcessamentoCancelado,
   verificarProcessamentoAtivo,
 } from '@/lib/processamento-cancelado'
+import { buscarExtracaoCache, salvarExtracaoCache } from '@/lib/extracao-cache'
+import type { AnaliseIA, LancamentoAI } from '@/lib/types'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -58,6 +60,29 @@ export async function POST(request: NextRequest) {
   try {
     await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
 
+    if (proc.content_hash) {
+      const cache = await buscarExtracaoCache(supabaseAdmin, proc.content_hash)
+      if (cache) {
+        await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
+        await supabaseAdmin
+          .from('processamentos_lancamentos')
+          .update({
+            status: 'aguardando_confirmacao',
+            tipo: cache.tipo,
+            analise_ia: cache.analise_ia,
+            lancamentos_ai: { lancamentos: cache.lancamentos },
+            erro: null,
+          })
+          .eq('id', processamentoId)
+
+        return NextResponse.json({
+          analise: cache.analise_ia,
+          lancamentos: cache.lancamentos,
+          fromCache: true,
+        })
+      }
+    }
+
     await supabaseAdmin
       .from('processamentos_lancamentos')
       .update({ status: 'extraindo' })
@@ -98,7 +123,7 @@ export async function POST(request: NextRequest) {
       .update({ status: 'processando', tipo: analise.tipo, analise_ia: analise })
       .eq('id', processamentoId)
 
-    const lancamentos = analise.tipo === 'single'
+    const lancamentos: LancamentoAI[] = analise.tipo === 'single'
       ? await processarSingle(buffer, analise, extractedText)
       : await processarMulti(buffer, analise, extractedText)
 
@@ -111,6 +136,10 @@ export async function POST(request: NextRequest) {
         lancamentos_ai: { lancamentos },
       })
       .eq('id', processamentoId)
+
+    if (proc.content_hash) {
+      await salvarExtracaoCache(supabaseAdmin, proc.content_hash, analise, lancamentos)
+    }
 
     return NextResponse.json({ analise, lancamentos })
 

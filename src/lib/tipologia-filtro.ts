@@ -1,5 +1,9 @@
-import { removerSufixoLixoTipologia } from './formatar-lancamento'
+import { formatarTipologia } from './formatar-lancamento'
 import { extrairDormitorios, extrairSuites } from './lancamentos-query'
+
+function tipologiaCanonica(tipologia: string | null | undefined): string {
+  return formatarTipologia(tipologia) ?? ''
+}
 
 const TIPOS_ESPECIAIS: { re: RegExp; label: string }[] = [
   { re: /\bloja\b/i, label: 'Loja' },
@@ -35,7 +39,8 @@ function palavraDorm(n: number) {
 /** Rótulo canônico de dormitórios/suítes para filtros (ex.: "4 dorms (2 suítes)"). */
 export function rotuloDormitorios(tipologia: string | null | undefined): string | null {
   if (!tipologia?.trim()) return null
-  const tip = removerSufixoLixoTipologia(tipologia).trim()
+  const tip = tipologiaCanonica(tipologia)
+  if (!tip) return null
 
   const combo = tip.match(/^(\d+)\s*dorms?\s*\(\s*(\d+)\s*suítes?\s*\)/i)
   if (combo) {
@@ -59,7 +64,8 @@ export function rotuloDormitorios(tipologia: string | null | undefined): string 
 /** Tipos de imóvel inferidos da tipologia (Studio, Duplex, Apartamento…). */
 export function extrairTiposImovel(tipologia: string | null | undefined): string[] {
   if (!tipologia?.trim()) return []
-  const tip = removerSufixoLixoTipologia(tipologia).trim()
+  const tip = tipologiaCanonica(tipologia)
+  if (!tip) return []
 
   const found: string[] = []
   for (const { re, label } of TIPOS_ESPECIAIS) {
