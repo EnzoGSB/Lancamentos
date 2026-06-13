@@ -66,6 +66,14 @@ const REGRA_TIPOLOGIA_UNIDADE = `TIPOLOGIA vs UNIDADE: Duplex, Garden, Penthouse
 
 const REGRA_TIPOLOGIA_TRUNCADA = `TIPOLOGIA TRUNCADA por coluna estreita/corte de faixa: COMPLETE padrões padronizados do mercado usando TEXTO NATIVO ou dedução óbvia — ex: "2 dorms. (1 suí" → "2 dorms (1 suíte)", "3 suít" → "3 suítes", "Dupl" → "Duplex". Isso é dedução de padrão recorrente em tabelões, não invenção. NÃO complete variantes específicas (FINAL 1, metragem, nome de planta) sem evidência no PDF.`
 
+const REGRA_CONSISTENCIA_COLUNAS = `CONSISTÊNCIA DE COLUNAS NO BLOCO TABULAR:
+- Cada bloco de tabela tem cabeçalhos de coluna (UNIDADES, METRAGEM, TIPO/TIPOLOGIA, PREÇO/DE/POR, ANDAR, VAGAS, ENDEREÇO, STATUS/ENTREGA, etc.). Se a coluna EXISTE no cabeçalho, TODAS as linhas de dados daquele bloco têm célula nessa coluna — preencha o campo correspondente em CADA linha JSON.
+- Nunca deixe unidade, metragem, tipologia ou preço preenchidos em algumas linhas do bloco e vazios em outras quando a coluna está presente. Leia linha a linha, coluna a coluna.
+- Célula vazia ou traço "—" no PDF → null no JSON. Isso é raro; não omita a linha inteira.
+- Células mescladas verticalmente (ENDEREÇO, STATUS, ENTREGA): o valor vale para TODAS as linhas do bloco — repita em cada linha JSON.
+- Mapeamento comum: UNIDADES/Unidade/Apto/Ap. → unidade (número do apto); METRAGEM/Área/m² privativa → metragem; TIPO/TIPOLOGIA → tipologia; POR/Preço/Valor de venda → valor_minimo; DE/Valor tabela → valor_maximo quando houver desconto; STATUS/Entrega → data_entrega; ENDEREÇO → endereco.
+- Tabela com coluna de apartamentos individuais (404, 406, 501…): UMA linha JSON por linha da tabela — NÃO agregue por tipologia. Preencha unidade em todas as linhas.`
+
 const REGRA_COMPLETUDE = `COMPLETUDE vs INVENÇÃO (prioridade máxima):
 - Analise a tabela com MUITO cuidado: estrutura visual, alinhamento de colunas, células mescladas, blocos por empreendimento e tabelas largas com preço à direita.
 - Para CADA linha de imóvel VISÍVEL, produza UMA linha JSON — mesmo parcial, incompleta ou ambígua.
@@ -73,17 +81,18 @@ const REGRA_COMPLETUDE = `COMPLETUDE vs INVENÇÃO (prioridade máxima):
 - Campo realmente ausente no documento → null. Vagas = "0" somente quando a tabela indicar zero vagas.
 - NUNCA invente: não chute empreendimento, bairro, preço, unidade ou andar que não constem no PDF/texto nativo para aquela linha.
 - TEXTO NATIVO completa campos de linhas JÁ visíveis (ex: preço cortado na faixa). Não crie linhas que não aparecem na imagem desta faixa.
+- ${REGRA_CONSISTENCIA_COLUNAS}
 - ${REGRA_TIPOLOGIA_TRUNCADA}`
 
 const SYSTEM_PROMPT_SINGLE = `Você é um especialista em extração de dados de tabelas de vendas imobiliárias brasileiras.
-Você está VENDO o PDF completo de UM empreendimento. Extraia UMA linha por tipologia de imóvel, consolidando os dados de todas as páginas.
+Você está VENDO o PDF completo de UM empreendimento. Extraia TODAS as linhas de imóvel: uma linha JSON por unidade quando houver coluna UNIDADES/Apto, ou uma linha por tipologia/variante em tabelas agregadas — consolidando dados de todas as páginas.
 
 Cada lançamento segue este schema:
 ${LANCAMENTO_SCHEMA}
 
 Regras críticas:
 0. ${REGRA_COMPLETUDE}
-1. Uma linha por tipologia ou variante (Studio, 1 dorm, 2 dorms, 2 dorms FINAL 2, 2 suítes, etc.). Variantes distintas (FINAL 1, FINAL 2, metragens diferentes) = linhas separadas na tipologia.
+1. Tabela com coluna UNIDADES/Apto/Unidade listando apartamentos (404, 406, 501…): UMA linha JSON por linha da tabela — preencha unidade, metragem, tipologia e preço em TODAS as linhas. Tabelas agregadas por tipologia ou preço por andar (sem número de apto): UMA linha por tipologia ou variante (Studio, 1 dorm, 2 dorms FINAL 2, etc.). Variantes distintas = linhas separadas.
 2. NÃO ignore tipologias com suítes — "2 SUÍTES", "3 SUÍTES" são tão válidas quanto "2 dorms"
 3. IGNORE completamente: KIT CONFORTO, KIT AUTOMAÇÃO, KIT DE ACABAMENTO, KIT BÁSICO e qualquer "kit" — são pacotes adicionais, NÃO são imóveis
 4. Páginas com tabelas UNIDADES + PREÇO DE VENDA por andar (mesmo com colunas ATO/MENSAIS/FINANCIAMENTO) contêm dados de imóvel — extraia TODAS as tipologias de TODAS as páginas, inclusive páginas 9 em diante.
@@ -110,7 +119,7 @@ ${LANCAMENTO_SCHEMA}
 
 Regras CRÍTICAS:
 0. ${REGRA_COMPLETUDE}
-1. Extraia TODOS os blocos visíveis nesta faixa — NÃO pare no primeiro. Páginas posteriores (ex: 9–14) costumam ter tipologias adicionais (2 DORM - FINAL 1, FINAL 2, etc.) — trate cada bloco como dado de imóvel.
+1. Extraia TODOS os blocos visíveis nesta faixa — NÃO pare no primeiro. Tabela com coluna UNIDADES/Apto: UMA linha JSON por linha — preencha unidade, metragem, tipologia e preço em TODAS as linhas do bloco.
 2. Tabelas com coluna UNIDADES (andares 1º–26º), ÁREA PRIVATIVA, PREÇO DE VENDA e colunas de pagamento (ATO, MENSAIS, FINANCIAMENTO) são tabelas de PREÇO DE UNIDADES — NÃO descarte por parecer "só pagamento". O PREÇO DE VENDA de cada andar é o valor do imóvel.
 3. Variantes distintas (ex: "2 DORM - FINAL 1" vs "2 DORM - FINAL 2", metragens diferentes) = LINHAS SEPARADAS. Inclua o sufixo completo na tipologia (ex: "2 dorms FINAL 2").
 4. Bloco com preços por andar: UMA linha por variante — valor_minimo = menor PREÇO DE VENDA da coluna, valor_maximo = maior, andar = faixa "1º-26º" (ou intervalo visível), metragem da coluna ÁREA PRIVATIVA, vagas da coluna VAGAS.
@@ -140,8 +149,8 @@ Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
 1. CÉLULAS MESCLADAS: região/bairro/empreendimento à esquerda usam células mescladas. Cada LINHA DE DADOS herda o empreendimento e o bairro do bloco ao qual pertence visualmente — NÃO do bloco vizinho acima.
 2. BAIRRO vs EMPREENDIMENTO: o bairro de cada linha é o da MESMA linha/bloco do empreendimento. Se o cabeçalho mesclado diz "Campo Belo" mas a linha é "Aura Moema", o bairro correto é Moema (o nome do empreendimento indica o bairro). NUNCA atribua "Campo Belo" a empreendimentos de outro bairro só por proximidade na tabela.
 3. EXTRAIA TODOS os empreendimentos e TODAS as linhas de dados desta faixa — NÃO descarte nenhum bloco, mesmo que o layout seja incomum. Blocos pequenos no meio ou no fim da faixa também contam — não pare após o primeiro empreendimento.
-4. AGREGUE POR TIPOLOGIA somente quando várias linhas VISÍVEIS forem claramente o MESMO empreendimento com a MESMA tipologia e metragem (ex.: andares diferentes, preços diferentes). Se cada linha da tabela representa um empreendimento distinto ou uma combinação única empreendimento+tipologia, produza UMA linha JSON por linha visível — NÃO consolide empreendimentos diferentes.
-5. CAMPO unidade: só número/código do apto (ex: 72-T2, 112, 241). Uma linha por unidade listada na tabela.
+4. Se o bloco tem coluna UNIDADES/Apto com números individuais: UMA linha JSON por linha — preencha unidade em todas; NÃO agregue. Agregue por tipologia SOMENTE quando NÃO houver coluna de apartamentos individuais e várias linhas forem claramente o MESMO empreendimento com a MESMA tipologia (ex.: preços por andar). Se cada linha é empreendimento ou unidade distinta, produza UMA linha JSON por linha visível.
+5. CAMPO unidade: só número/código do apto (ex: 72-T2, 112, 241). Quando a coluna UNIDADES existir no bloco, TODAS as linhas devem ter unidade preenchida.
 6. ${REGRA_TIPOLOGIA_UNIDADE}
 7. CAMPO andar: APENAS pavimento/nível (ex: 3º, 12º andar, Térreo, Cobertura). Faixa → "1º-26º". Não coloque código de unidade/apartamento aqui.
 8. Se esta FAIXA cortou o cabeçalho de região/empreendimento, descubra o bairro pelo NOME DO EMPREENDIMENTO, pelo ENDEREÇO da linha ou pelo TEXTO NATIVO — NUNCA repita cegamente o bairro da célula mesclada acima se o empreendimento indicar outro bairro.
@@ -370,13 +379,101 @@ function normalizarTipologiaUnidade(lancamentos: LancamentoAI[]): LancamentoAI[]
   return lancamentos
 }
 
+const normTxt = (s: string | null | undefined) =>
+  (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
+
+function campoPreenchido(v: unknown): boolean {
+  return v != null && v !== ''
+}
+
+function chaveBlocoTabular(l: LancamentoAI): string | null {
+  const end = normTxt(l.endereco)
+  const emp = normTxt(l.empreendimento)
+  const con = normTxt(l.construtora)
+  if (end.length >= 8) return `${con}|${emp}|e:${end.slice(0, 48)}`
+  if (emp.length >= 3) return `${con}|emp:${emp}`
+  return null
+}
+
+function valorDominanteNoBloco(grupo: LancamentoAI[], campo: keyof LancamentoAI): unknown {
+  const freq = new Map<string, { count: number; value: unknown }>()
+  for (const l of grupo) {
+    const v = l[campo]
+    if (!campoPreenchido(v)) continue
+    const k = typeof v === 'object' ? JSON.stringify(v) : String(v).trim()
+    const entry = freq.get(k) ?? { count: 0, value: v }
+    entry.count++
+    freq.set(k, entry)
+  }
+  let best: { count: number; value: unknown } | null = null
+  for (const entry of freq.values()) {
+    if (!best || entry.count > best.count) best = entry
+  }
+  return best?.value ?? null
+}
+
+/** Propaga campos de colunas presentes no bloco (células mescladas + colunas com valor único). */
+function completarColunasPorBloco(lancamentos: LancamentoAI[]): LancamentoAI[] {
+  const items = lancamentos.map(l => ({ ...l }))
+  const grupos = new Map<string, LancamentoAI[]>()
+
+  for (const l of items) {
+    const k = chaveBlocoTabular(l)
+    if (!k) continue
+    const arr = grupos.get(k) ?? []
+    arr.push(l)
+    grupos.set(k, arr)
+  }
+
+  const camposMesclados: (keyof LancamentoAI)[] = [
+    'construtora', 'empreendimento', 'endereco', 'bairro', 'data_entrega',
+  ]
+  const camposCompartilhados: (keyof LancamentoAI)[] = [
+    'tipologia', 'vagas', 'desconto_margem', 'valor_minimo', 'valor_maximo',
+  ]
+
+  for (const grupo of grupos.values()) {
+    if (grupo.length < 2) continue
+
+    for (const campo of camposMesclados) {
+      const best = valorDominanteNoBloco(grupo, campo)
+      if (!campoPreenchido(best)) continue
+      for (const l of grupo) {
+        if (!campoPreenchido(l[campo])) {
+          ;(l as Record<string, unknown>)[campo] = best
+        }
+      }
+    }
+
+    for (const campo of camposCompartilhados) {
+      const preenchidos = grupo.filter(l => campoPreenchido(l[campo]))
+      if (preenchidos.length === 0) continue
+      const dominante = valorDominanteNoBloco(grupo, campo)
+      if (!campoPreenchido(dominante)) continue
+      const distintos = new Set(
+        preenchidos.map(l => {
+          const v = l[campo]
+          return typeof v === 'object' ? JSON.stringify(v) : String(v).trim()
+        })
+      )
+      if (distintos.size !== 1) continue
+      for (const l of grupo) {
+        if (!campoPreenchido(l[campo])) {
+          ;(l as Record<string, unknown>)[campo] = dominante
+        }
+      }
+    }
+  }
+
+  return items
+}
+
 // Consolida por (empreendimento + tipologia + metragem): mescla entradas com a mesma
 // chave em vez de descartar. Preserva a faixa de valores (valor_minimo/maximo) quando há
 // várias linhas da mesma tipologia (ex: Danti) e remove duplicatas de overlap das faixas.
 function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
   const entrada = normalizarTipologiaUnidade(lancamentos.map(l => ({ ...l })))
-  const norm = (s: string | null | undefined) =>
-    (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
+  const norm = normTxt
   const normMetragem = (s: string | null | undefined) =>
     ((s ?? '').match(/\d+[.,]?\d*/g) ?? []).map(n => n.replace(',', '.')).join('-')
 
@@ -505,6 +602,16 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
           const outro = grupo[j]
           if (!precosSimilares(toNum(base.valor_minimo), toNum(outro.valor_minimo))) continue
 
+          // Apartamentos distintos no mesmo bloco — nunca colapsar (ex.: unidades 404 e 406).
+          if (base.unidade?.trim() && outro.unidade?.trim() && norm(base.unidade) !== norm(outro.unidade)) {
+            continue
+          }
+          if (!base.unidade?.trim() && !outro.unidade?.trim()) {
+            const metB = normMetragem(base.metragem)
+            const metO = normMetragem(outro.metragem)
+            if (metB && metO && metB !== metO) continue
+          }
+
           // Mesmo imóvel com bairro errado herdado de célula mesclada vizinha.
           const bairrosDiferentes = norm(base.bairro) !== norm(outro.bairro)
           const unidadesCompativeis =
@@ -549,7 +656,9 @@ function deduplicar(lancamentos: LancamentoAI[]): LancamentoAI[] {
     return items
   }
 
-  return propagarCamposEmpreendimento(fundirSemelhantes(Array.from(map.values())))
+  return completarColunasPorBloco(
+    propagarCamposEmpreendimento(fundirSemelhantes(Array.from(map.values())))
+  )
 }
 
 // Extração a partir do PDF inteiro (visão nativa) — usado no fluxo single
@@ -579,7 +688,7 @@ async function _extrairDePdf(
                   file_data: `data:application/pdf;base64,${pdfBase64}`,
                 },
               },
-              { type: 'text', text: `${contexto}\n\nAnalise o PDF com cuidado e extraia TODAS as tipologias/linhas de imóvel visíveis — uma por linha. Inclua linhas incompletas (campos ausentes = null). Não pule linhas ambíguas.${blocoTexto}` },
+              { type: 'text', text: `${contexto}\n\nAnalise o PDF com cuidado e extraia TODAS as tipologias/linhas de imóvel visíveis — uma por linha. Se o bloco tem coluna UNIDADES/METRAGEM/TIPO/PREÇO, preencha esses campos em TODAS as linhas do bloco (célula vazia = null). Inclua linhas incompletas. Não pule linhas ambíguas.${blocoTexto}` },
             ],
           },
         ],
@@ -633,7 +742,7 @@ async function _extrairDeImagem(
             role: 'user',
             content: [
               { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
-              { type: 'text', text: `${contexto}\n\nEsta imagem é uma FAIXA (recorte horizontal) de uma página. Analise a tabela com cuidado. Extraia TODAS as linhas de imóvel VISÍVEIS nesta faixa — inclua linhas incompletas (campos ausentes = null). Não pule linhas ambíguas. Não adicione linhas de fora da faixa.${blocoTexto}` },
+              { type: 'text', text: `${contexto}\n\nEsta imagem é uma FAIXA (recorte horizontal) de uma página. Analise a tabela com cuidado. Extraia TODAS as linhas de imóvel VISÍVEIS nesta faixa. Se o cabeçalho do bloco tem coluna UNIDADES/METRAGEM/TIPO/PREÇO, preencha em TODAS as linhas visíveis (célula vazia = null). Inclua linhas incompletas. Não pule linhas ambíguas. Não adicione linhas de fora da faixa.${blocoTexto}` },
             ],
           },
         ],

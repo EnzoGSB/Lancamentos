@@ -185,6 +185,11 @@ Danti revelou: prompt enviesado para o Cyrela trazia 29 de ~50 linhas).
 - Ao colapsar a mesma chave: **mescla** — `valor_minimo` = menor, `valor_maximo` =
   maior, e preenche campos vazios a partir da outra entrada (preserva a faixa de
   valores quando há várias unidades da mesma tipologia, ex.: Danti).
+- **`completarColunasPorBloco` (v1.3)**: agrupa linhas do mesmo bloco (endereço/empreendimento)
+  e propaga campos de colunas mescladas (endereço, status/entrega) e colunas com
+  valor único no bloco (tipologia, preço quando iguais). Não inventa unidade/metragem
+  por linha — isso vem da extração visual.
+- **`fundirSemelhantes` (v1.3)**: não funde apartamentos com `unidade` distinta.
 
 ---
 
@@ -250,3 +255,9 @@ Se algum desses regredir, a alteração que causou isso deve ser revertida.
   e erro se >15% das faixas falharem; (d) `numFaixasPorDocumento` usa nº de
   páginas (determinístico) em single e multi; (e) `content_hash` SHA-256 no upload
   com HTTP 409 para PDF já enviado.
+- **v1.3** — Consistência de colunas por bloco tabular (decisão explícita do dono).
+  Mudanças: (a) `REGRA_CONSISTENCIA_COLUNAS` nos prompts — coluna no cabeçalho
+  implica dado em todas as linhas do bloco; (b) single/multi distinguem tabela por
+  unidade vs agregada por tipologia; (c) `completarColunasPorBloco` propaga células
+  mescladas e colunas com valor único; (d) `fundirSemelhantes` não colapsa
+  apartamentos com `unidade` distinta.
