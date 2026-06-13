@@ -64,12 +64,13 @@ const DRAG_THRESHOLD_PX = 4
 
 type CellCoord = { row: number; field: EditableField }
 type RangeSelection = { anchor: CellCoord; focus: CellCoord }
-type ValorOriginalCelula = { row: number; field: EditableField; valor: string }
 type DragState = {
   anchor: CellCoord
   pointerX: number
   pointerY: number
   didDrag: boolean
+  ctrlToggle?: boolean
+  cellsBeforeDrag?: Set<string>
 }
 
 function fieldIndex(field: EditableField): number {
@@ -87,38 +88,44 @@ function normalizeRange(sel: RangeSelection) {
   }
 }
 
-function isCellInRange(row: number, field: EditableField, sel: RangeSelection | null): boolean {
-  if (!sel) return false
-  const bounds = normalizeRange(sel)
-  const col = fieldIndex(field)
-  return row >= bounds.minRow
-    && row <= bounds.maxRow
-    && col >= bounds.minCol
-    && col <= bounds.maxCol
+function cellKey(row: number, field: EditableField): string {
+  return `${row}:${field}`
 }
 
-function countCellsInColumn(sel: RangeSelection | null, field: EditableField): number {
-  if (!sel) return 0
-  const bounds = normalizeRange(sel)
-  const col = fieldIndex(field)
-  if (col < bounds.minCol || col > bounds.maxCol) return 0
-  return bounds.maxRow - bounds.minRow + 1
-}
-
-function linhasNaColunaDoIntervalo(sel: RangeSelection, field: EditableField): Set<number> | null {
-  const bounds = normalizeRange(sel)
-  const col = fieldIndex(field)
-  if (col < bounds.minCol || col > bounds.maxCol) return null
-  return linhasNoIntervalo(bounds.minRow, bounds.maxRow)
-}
-
-function valorParaComparacao(field: EditableField, v: unknown): string {
-  if (v == null || v === '') return ''
-  if (field === 'valor_minimo' || field === 'valor_maximo') {
-    const n = Number(v)
-    return Number.isFinite(n) ? String(n) : ''
+function cellsInRange(anchor: CellCoord, focus: CellCoord): Set<string> {
+  const bounds = normalizeRange({ anchor, focus })
+  const cells = new Set<string>()
+  for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
+    for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+      cells.add(cellKey(r, EDITABLE_FIELDS[c]))
+    }
   }
-  return String(v).trim()
+  return cells
+}
+
+function parseCellKey(key: string): CellCoord {
+  const idx = key.indexOf(':')
+  return { row: Number(key.slice(0, idx)), field: key.slice(idx + 1) as EditableField }
+}
+
+function rowsFromSelectedCells(cells: Set<string>): Set<number> {
+  const rows = new Set<number>()
+  for (const key of cells) rows.add(parseCellKey(key).row)
+  return rows
+}
+
+function sanitizeValor(field: EditableField, value: unknown): unknown {
+  if (field === 'metragem' && typeof value === 'string') return sanitizarMetragemInput(value)
+  if (field === 'valor_minimo' || field === 'valor_maximo') {
+    if (typeof value === 'number') return value
+    if (value === null || value === '') return null
+    return Number(value)
+  }
+  return value
+}
+
+function isCellInSet(row: number, field: EditableField, cells: Set<string>): boolean {
+  return cells.has(cellKey(row, field))
 }
 
 function linhasNoIntervalo(a: number, b: number): Set<number> {
@@ -163,44 +170,60 @@ export default function MapeamentoPage() {
   const [lancamentos, setLancamentos] = useState<LancamentoAI[]>([])
   const [posicaoFila, setPosicaoFila] = useState<number | null>(null)
   const [selectedCell, setSelectedCell] = useState<CellCoord | null>(null)
-  const [rangeSelection, setRangeSelection] = useState<RangeSelection | null>(null)
-  const [selectedRows, setSelectedRows] = useState<Set<number>>(() => new Set())
+  const [selectedCells, setSelectedCells] = useState<Set<string>>(() => new Set())
+  const [selectionAnchor, setSelectionAnchor] = useState<CellCoord | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDraggingCells, setIsDraggingCells] = useState(false)
   const [undoStack, setUndoStack] = useState<LancamentoAI[][]>([])
 
   const undoStackRef = useRef(undoStack)
   undoStackRef.current = undoStack
-  const valorOriginalCelulaRef = useRef<ValorOriginalCelula | null>(null)
-  const lastRowClickRef = useRef<number | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
+  const skipNextFocusSelectionRef = useRef(false)
+  const multiEditUndoPushedRef = useRef(false)
 
   const snapshotLancamentos = (items: LancamentoAI[]) =>
     items.map(l => ({ ...l }))
 
   const limparSelecoes = useCallback(() => {
     setSelectedCell(null)
-    setRangeSelection(null)
-    setSelectedRows(new Set())
-    valorOriginalCelulaRef.current = null
+    setSelectedCells(new Set())
+    setSelectionAnchor(null)
+    multiEditUndoPushedRef.current = false
   }, [])
 
   const isCellHighlighted = useCallback((row: number, field: EditableField) => {
-    return isCellInRange(row, field, rangeSelection)
-  }, [rangeSelection])
+    return isCellInSet(row, field, selectedCells)
+  }, [selectedCells])
 
   const definirSelecao = useCallback((
     row: number,
     field: EditableField,
     opts?: { shift?: boolean; anchor?: CellCoord }
   ) => {
+    const anchor = opts?.shift
+      ? (opts.anchor ?? selectionAnchor ?? { row, field })
+      : { row, field }
+    const cells = cellsInRange(anchor, { row, field })
     setSelectedCell({ row, field })
-    setRangeSelection(prev => {
-      if (opts?.shift) {
-        const anchor = opts.anchor ?? prev?.anchor ?? { row, field }
-        return { anchor, focus: { row, field } }
+    setSelectedCells(cells)
+    if (!opts?.shift) setSelectionAnchor(anchor)
+  }, [selectionAnchor])
+
+  const alternarCelulaCtrl = useCallback((row: number, field: EditableField) => {
+    const key = cellKey(row, field)
+    setSelectedCells(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      if (next.size === 0) {
+        setSelectedCell(null)
+        setSelectionAnchor(null)
+      } else {
+        setSelectedCell({ row, field })
+        if (next.size === 1) setSelectionAnchor({ row, field })
       }
-      return { anchor: { row, field }, focus: { row, field } }
+      return next
     })
   }, [])
 
@@ -211,8 +234,10 @@ export default function MapeamentoPage() {
   ) => {
     if (e.button !== 0) return
 
-    const anchor = e.shiftKey
-      ? (rangeSelection?.anchor ?? selectedCell ?? { row, field })
+    const ctrl = e.ctrlKey || e.metaKey
+    const shift = e.shiftKey
+    const anchor = shift && !ctrl
+      ? (selectionAnchor ?? selectedCell ?? { row, field })
       : { row, field }
 
     dragStateRef.current = {
@@ -220,11 +245,17 @@ export default function MapeamentoPage() {
       pointerX: e.clientX,
       pointerY: e.clientY,
       didDrag: false,
+      ctrlToggle: ctrl,
+      cellsBeforeDrag: ctrl ? new Set(selectedCells) : undefined,
     }
     setIsDraggingCells(true)
     setSelectedCell({ row, field })
-    setRangeSelection({ anchor, focus: { row, field } })
-  }, [rangeSelection, selectedCell])
+
+    if (ctrl) return
+
+    setSelectedCells(cellsInRange(anchor, { row, field }))
+    if (!shift) setSelectionAnchor(anchor)
+  }, [selectionAnchor, selectedCell, selectedCells])
 
   const estenderArraste = useCallback((
     row: number,
@@ -248,18 +279,34 @@ export default function MapeamentoPage() {
       }
     }
 
-    setRangeSelection({ anchor: drag.anchor, focus: { row, field } })
+    const range = cellsInRange(drag.anchor, { row, field })
+    if (drag.cellsBeforeDrag) {
+      setSelectedCells(new Set([...drag.cellsBeforeDrag, ...range]))
+    } else {
+      setSelectedCells(range)
+    }
     setSelectedCell({ row, field })
   }, [])
 
-  const finalizarArraste = useCallback((e: React.PointerEvent<HTMLTableCellElement>) => {
-    const didDrag = dragStateRef.current?.didDrag
+  const finalizarArraste = useCallback((
+    row: number,
+    field: EditableField,
+    e: React.PointerEvent<HTMLTableCellElement>
+  ) => {
+    const drag = dragStateRef.current
+    const didDrag = drag?.didDrag
     dragStateRef.current = null
     setIsDraggingCells(false)
+
+    if (drag?.ctrlToggle && !didDrag) {
+      skipNextFocusSelectionRef.current = true
+      alternarCelulaCtrl(row, field)
+    }
+
     if (!didDrag) {
       e.currentTarget.querySelector('input')?.focus()
     }
-  }, [])
+  }, [alternarCelulaCtrl])
 
   useEffect(() => {
     if (!isDraggingCells) return
@@ -391,21 +438,52 @@ export default function MapeamentoPage() {
     }
   }, [id, lancamentos, router])
 
-  const updateLancamento = useCallback((index: number, field: keyof LancamentoAI, value: unknown) => {
-    const next = field === 'metragem' && typeof value === 'string'
-      ? sanitizarMetragemInput(value)
-      : value
-    setLancamentos(prev => prev.map((l, i) => i === index ? { ...l, [field]: next } : l))
-  }, [])
+  const updateValorSelecao = useCallback((
+    row: number,
+    field: EditableField,
+    value: unknown
+  ) => {
+    const key = cellKey(row, field)
+    const alvo = selectedCells.size > 1 && selectedCells.has(key)
+      ? selectedCells
+      : new Set([key])
 
-  const blurCampo = useCallback((index: number, field: EditableField) => {
+    setLancamentos(prev => {
+      if (alvo.size > 1 && !multiEditUndoPushedRef.current) {
+        multiEditUndoPushedRef.current = true
+        setUndoStack(u => [...u, snapshotLancamentos(prev)])
+      }
+
+      return prev.map((l, i) => {
+        let patch: Partial<LancamentoAI> | null = null
+        for (const k of alvo) {
+          const { row: r, field: f } = parseCellKey(k)
+          if (r !== i) continue
+          patch = { ...(patch ?? {}), [f]: sanitizeValor(f, value) }
+        }
+        return patch ? { ...l, ...patch } : l
+      })
+    })
+  }, [selectedCells])
+
+  const blurCampoSelecao = useCallback((row: number, field: EditableField) => {
+    const key = cellKey(row, field)
+    const alvo = selectedCells.size > 1 && selectedCells.has(key)
+      ? selectedCells
+      : new Set([key])
+
     setLancamentos(prev => prev.map((l, i) => {
-      if (i !== index) return l
-      const formatted = formatarCampo(field, l[field])
-      if (formatted === l[field]) return l
-      return { ...l, [field]: formatted }
+      let next = l
+      for (const k of alvo) {
+        const { row: r, field: f } = parseCellKey(k)
+        if (r !== i) continue
+        const formatted = formatarCampo(f, next[f])
+        if (formatted !== next[f]) next = { ...next, [f]: formatted }
+      }
+      return next
     }))
-  }, [])
+    multiEditUndoPushedRef.current = false
+  }, [selectedCells])
 
   const registrarFocusCelula = useCallback((
     row: number,
@@ -413,34 +491,16 @@ export default function MapeamentoPage() {
     valor: unknown,
     e?: React.FocusEvent<HTMLInputElement>
   ) => {
+    if (skipNextFocusSelectionRef.current) {
+      skipNextFocusSelectionRef.current = false
+      return
+    }
+    multiEditUndoPushedRef.current = false
     const mod = e?.nativeEvent as unknown as { shiftKey?: boolean }
     const shift = !!mod?.shiftKey
-    const anchor = shift ? (rangeSelection?.anchor ?? selectedCell ?? undefined) : undefined
+    const anchor = shift ? (selectionAnchor ?? selectedCell ?? undefined) : undefined
     definirSelecao(row, field, { shift, anchor })
-    valorOriginalCelulaRef.current = { row, field, valor: valorParaComparacao(field, valor) }
-  }, [definirSelecao, rangeSelection, selectedCell])
-
-  const toggleLinhaSelecionada = useCallback((row: number, shift: boolean) => {
-    setSelectedRows(prev => {
-      const next = new Set(prev)
-      if (shift && lastRowClickRef.current != null) {
-        for (const r of linhasNoIntervalo(lastRowClickRef.current, row)) next.add(r)
-      } else if (next.has(row)) {
-        next.delete(row)
-      } else {
-        next.add(row)
-      }
-      return next
-    })
-    lastRowClickRef.current = row
-  }, [])
-
-  const toggleTodasLinhas = useCallback(() => {
-    setSelectedRows(prev => {
-      if (prev.size === lancamentos.length) return new Set()
-      return new Set(lancamentos.map((_, i) => i))
-    })
-  }, [lancamentos.length])
+  }, [definirSelecao, selectionAnchor, selectedCell])
 
   const desfazer = useCallback(() => {
     setUndoStack(prev => {
@@ -466,81 +526,25 @@ export default function MapeamentoPage() {
     toast.success(`"${FIELD_LABELS[field]}" aplicado em ${lancamentos.length} linhas`)
   }, [selectedCell, lancamentos])
 
-  const aplicarParaSemelhantes = useCallback(() => {
-    if (!selectedCell) {
-      toast.error('Selecione uma célula antes de aplicar')
+  const linhasSelecionadas = rowsFromSelectedCells(selectedCells)
+
+  const apagarImoveisSelecionados = useCallback(() => {
+    const rows = rowsFromSelectedCells(selectedCells)
+    if (rows.size === 0) {
+      toast.error('Selecione células dos imóveis que deseja apagar')
       return
     }
-    const { row, field } = selectedCell
-    const origem = valorOriginalCelulaRef.current
-    if (!origem || origem.row !== row || origem.field !== field) {
-      toast.error('Clique na célula editada antes de aplicar aos semelhantes')
-      return
-    }
-
-    const valorNovo = formatarCampo(field, lancamentos[row]?.[field])
-    const valorAntigo = origem.valor
-    const limitarSelecao = rangeSelection
-      ? linhasNaColunaDoIntervalo(rangeSelection, field)
-      : null
-    let alteradas = 0
-
-    setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
-    setLancamentos(prev => prev.map((l, idx) => {
-      if (limitarSelecao && !limitarSelecao.has(idx)) return l
-      if (valorParaComparacao(field, l[field]) !== valorAntigo) return l
-      alteradas++
-      return { ...l, [field]: valorNovo }
-    }))
-
-    if (alteradas === 0) {
-      toast.error('Nenhuma linha com o valor original encontrada')
-      setUndoStack(prev => prev.slice(0, -1))
-      return
-    }
-
-    toast.success(
-      `"${FIELD_LABELS[field]}" aplicado em ${alteradas} linha${alteradas !== 1 ? 's' : ''} com "${valorAntigo || '—'}"`
-    )
-  }, [selectedCell, lancamentos, rangeSelection])
-
-  const aplicarASelecao = useCallback(() => {
-    if (!selectedCell) {
-      toast.error('Selecione uma célula antes de aplicar')
-      return
-    }
-    const { row, field } = selectedCell
-    const linhasIntervalo = rangeSelection
-      ? linhasNaColunaDoIntervalo(rangeSelection, field)
-      : null
-    const rows = linhasIntervalo && linhasIntervalo.size > 1
-      ? linhasIntervalo
-      : new Set([row])
-
-    const valor = formatarCampo(field, lancamentos[row]?.[field])
-    setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
-    setLancamentos(prev => prev.map((l, idx) =>
-      rows.has(idx) ? { ...l, [field]: valor } : l
-    ))
-    toast.success(`"${FIELD_LABELS[field]}" aplicado em ${rows.size} célula${rows.size !== 1 ? 's' : ''}`)
-  }, [selectedCell, rangeSelection, lancamentos])
-
-  const apagarLinhasSelecionadas = useCallback(() => {
-    if (selectedRows.size === 0) {
-      toast.error('Selecione pelo menos uma linha para apagar')
-      return
-    }
-    if (lancamentos.length - selectedRows.size < 1) {
+    if (lancamentos.length - rows.size < 1) {
       toast.error('Deixe pelo menos um imóvel na tabela')
       return
     }
 
     setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
-    setLancamentos(prev => prev.filter((_, i) => !selectedRows.has(i)))
+    setLancamentos(prev => prev.filter((_, i) => !rows.has(i)))
     limparSelecoes()
     setDeleteConfirmOpen(false)
-    toast.success(`${selectedRows.size} linha${selectedRows.size !== 1 ? 's' : ''} removida${selectedRows.size !== 1 ? 's' : ''}`)
-  }, [selectedRows, lancamentos, limparSelecoes])
+    toast.success(`${rows.size} imóve${rows.size !== 1 ? 'is' : 'l'} removido${rows.size !== 1 ? 's' : ''}`)
+  }, [selectedCells, lancamentos, limparSelecoes])
 
   useEffect(() => {
     if (status !== 'aguardando_confirmacao') return
@@ -558,16 +562,12 @@ export default function MapeamentoPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [status, desfazer])
 
-  const celulasSelecionadas = selectedCell
-    ? countCellsInColumn(rangeSelection, selectedCell.field)
-    : 0
-
   const celulaProps = (row: number, field: EditableField) => ({
     onPointerDown: (e: React.PointerEvent<HTMLTableCellElement>) => iniciarArraste(row, field, e),
     onPointerEnter: (e: React.PointerEvent<HTMLTableCellElement>) => {
       if (isDraggingCells) estenderArraste(row, field, e.clientX, e.clientY)
     },
-    onPointerUp: finalizarArraste,
+    onPointerUp: (e: React.PointerEvent<HTMLTableCellElement>) => finalizarArraste(row, field, e),
   })
 
   const renderCelula = (row: number, field: EditableField, l: LancamentoAI) => {
@@ -588,15 +588,18 @@ export default function MapeamentoPage() {
             ? metragemParaEdicao(l[field] as string)
             : ((l[field] as string) ?? '')}
           title={(l[field] as string) ?? undefined}
-          onChange={e => updateLancamento(row, field, e.target.value)}
+          onChange={e => updateValorSelecao(row, field, e.target.value)}
           onFocus={e => {
             registrarFocusCelula(row, field, l[field], e)
+            if (selectedCells.size > 1 && selectedCells.has(cellKey(row, field))) {
+              e.target.select()
+            }
             if (field === 'metragem' && l.metragem) {
               const num = metragemParaEdicao(l.metragem)
-              if (num !== l.metragem) updateLancamento(row, 'metragem', num)
+              if (num !== l.metragem) updateValorSelecao(row, 'metragem', num)
             }
           }}
-          onBlur={() => blurCampo(row, field)}
+          onBlur={() => blurCampoSelecao(row, field)}
           className={inputClass(highlighted, field)}
         />
       </td>
@@ -677,7 +680,7 @@ export default function MapeamentoPage() {
           <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-between items-stretch sm:items-center gap-3 mb-4">
             <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3">
               <p className="text-sm text-gray-500">
-                Arraste para selecionar várias células. Shift+clique estende a seleção.
+                Arraste ou Ctrl+clique para selecionar células. Digite para preencher todas de uma vez; Apagar remove os imóveis das linhas selecionadas.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -697,36 +700,12 @@ export default function MapeamentoPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={aplicarParaSemelhantes}
-                  disabled={!selectedCell}
-                  className="flex-1 sm:flex-none touch-manipulation"
-                  title={selectedCell
-                    ? `Aplicar o valor editado só nas linhas com o mesmo valor original (${FIELD_LABELS[selectedCell.field]})`
-                    : 'Edite uma célula e aplique só nas linhas com o mesmo valor anterior'}
-                >
-                  Aplicar aos semelhantes
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={aplicarASelecao}
-                  disabled={!selectedCell || celulasSelecionadas < 2}
-                  className="flex-1 sm:flex-none touch-manipulation"
-                  title="Copia o valor da célula focada para as células selecionadas na mesma coluna"
-                >
-                  Aplicar à seleção{celulasSelecionadas > 1 ? ` (${celulasSelecionadas})` : ''}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
                   onClick={() => setDeleteConfirmOpen(true)}
-                  disabled={selectedRows.size === 0}
+                  disabled={linhasSelecionadas.size === 0}
                   className="flex-1 sm:flex-none touch-manipulation text-red-700 hover:text-red-800"
                 >
                   <Trash2 className="size-3.5 mr-1" />
-                  Apagar{selectedRows.size > 0 ? ` (${selectedRows.size})` : ''}
+                  Apagar{linhasSelecionadas.size > 0 ? ` (${linhasSelecionadas.size})` : ''}
                 </Button>
                 <Button
                   type="button"
@@ -741,11 +720,13 @@ export default function MapeamentoPage() {
                   Desfazer
                 </Button>
               </div>
-              {selectedCell && (
+              {selectedCells.size > 0 && (
                 <span className="text-xs text-blue-600">
-                  Foco: linha {selectedCell.row + 1}, {FIELD_LABELS[selectedCell.field]}
-                  {celulasSelecionadas > 1 ? ` · ${celulasSelecionadas} células selecionadas` : ''}
-                  {selectedRows.size > 0 ? ` · ${selectedRows.size} linha${selectedRows.size !== 1 ? 's' : ''} marcada${selectedRows.size !== 1 ? 's' : ''} para apagar` : ''}
+                  {selectedCells.size} célula{selectedCells.size !== 1 ? 's' : ''} selecionada{selectedCells.size !== 1 ? 's' : ''}
+                  {linhasSelecionadas.size > 0
+                    ? ` · ${linhasSelecionadas.size} imóve${linhasSelecionadas.size !== 1 ? 'is' : 'l'} para apagar`
+                    : ''}
+                  {selectedCell ? ` · foco: ${FIELD_LABELS[selectedCell.field]}, linha ${selectedCell.row + 1}` : ''}
                 </span>
               )}
             </div>
@@ -762,11 +743,11 @@ export default function MapeamentoPage() {
           <ConfirmDialog
             open={deleteConfirmOpen}
             onOpenChange={setDeleteConfirmOpen}
-            title="Apagar linhas selecionadas?"
-            description={`${selectedRows.size} imóvel${selectedRows.size !== 1 ? 'is' : ''} será${selectedRows.size !== 1 ? 'ão' : ''} removido${selectedRows.size !== 1 ? 's' : ''} da revisão. Você pode desfazer antes de salvar no banco.`}
+            title="Apagar imóveis selecionados?"
+            description={`${linhasSelecionadas.size} imóvel${linhasSelecionadas.size !== 1 ? 'is' : ''} será${linhasSelecionadas.size !== 1 ? 'ão' : ''} removido${linhasSelecionadas.size !== 1 ? 's' : ''} da revisão. Você pode desfazer antes de salvar no banco.`}
             confirmLabel="Apagar"
             variant="destructive"
-            onConfirm={apagarLinhasSelecionadas}
+            onConfirm={apagarImoveisSelecionados}
           />
 
           <Card>
@@ -777,7 +758,6 @@ export default function MapeamentoPage() {
               <div className="md:p-1 max-md:overflow-x-auto max-md:overscroll-x-contain">
                 <table className="w-full table-fixed text-xs max-md:min-w-[1150px]">
                   <colgroup>
-                    <col style={{ width: '3%' }} />
                     <col style={{ width: '3%' }} />
                     <col style={{ width: '8%' }} />
                     <col style={{ width: '12%' }} />
@@ -794,20 +774,6 @@ export default function MapeamentoPage() {
                   </colgroup>
                   <thead>
                     <tr className="border-b bg-gray-50">
-                      <th className="p-1 text-center">
-                        <input
-                          type="checkbox"
-                          checked={lancamentos.length > 0 && selectedRows.size === lancamentos.length}
-                          ref={el => {
-                            if (el) {
-                              el.indeterminate = selectedRows.size > 0 && selectedRows.size < lancamentos.length
-                            }
-                          }}
-                          onChange={toggleTodasLinhas}
-                          title="Selecionar todas as linhas"
-                          className="size-3.5 cursor-pointer"
-                        />
-                      </th>
                       <th className="text-left p-1 font-medium text-gray-500 leading-tight">#</th>
                       <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Construtora</th>
                       <th className="text-left p-1 font-medium text-gray-500 leading-tight whitespace-normal">Empreendimento</th>
@@ -829,18 +795,9 @@ export default function MapeamentoPage() {
                         key={i}
                         className={cn(
                           'border-b hover:bg-gray-50',
-                          selectedRows.has(i) && 'bg-red-50/40'
+                          linhasSelecionadas.has(i) && 'bg-red-50/40'
                         )}
                       >
-                        <td className="p-1 text-center align-top">
-                          <input
-                            type="checkbox"
-                            checked={selectedRows.has(i)}
-                            onClick={e => toggleLinhaSelecionada(i, e.shiftKey)}
-                            title="Selecionar linha para apagar (Shift estende)"
-                            className="size-3.5 cursor-pointer"
-                          />
-                        </td>
                         <td className="p-1 text-gray-400 tabular-nums">{i + 1}</td>
                         {TEXT_FIELDS.map(field => renderCelula(i, field, l))}
                         {(['valor_minimo', 'valor_maximo'] as const).map(field => (
@@ -855,9 +812,18 @@ export default function MapeamentoPage() {
                             <input
                               type="number"
                               value={l[field] ?? ''}
-                              onChange={e => updateLancamento(i, field, e.target.value ? Number(e.target.value) : null)}
-                              onFocus={e => registrarFocusCelula(i, field, l[field], e)}
-                              onBlur={() => blurCampo(i, field)}
+                              onChange={e => updateValorSelecao(
+                                i,
+                                field,
+                                e.target.value ? Number(e.target.value) : null
+                              )}
+                              onFocus={e => {
+                                registrarFocusCelula(i, field, l[field], e)
+                                if (selectedCells.size > 1 && selectedCells.has(cellKey(i, field))) {
+                                  e.target.select()
+                                }
+                              }}
+                              onBlur={() => blurCampoSelecao(i, field)}
                               className={numberInputClass(isCellHighlighted(i, field), field)}
                             />
                           </td>
