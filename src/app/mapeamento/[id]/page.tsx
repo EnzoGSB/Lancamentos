@@ -53,9 +53,64 @@ const FIELD_LABELS: Record<EditableField, string> = {
   desconto_margem: 'Desconto',
 }
 
-type SelectedCell = { row: number; field: EditableField }
-type ColumnSelection = { field: EditableField; rows: Set<number> }
+const EDITABLE_FIELDS: EditableField[] = [
+  ...TEXT_FIELDS,
+  'valor_minimo',
+  'valor_maximo',
+  'desconto_margem',
+]
+
+const DRAG_THRESHOLD_PX = 4
+
+type CellCoord = { row: number; field: EditableField }
+type RangeSelection = { anchor: CellCoord; focus: CellCoord }
 type ValorOriginalCelula = { row: number; field: EditableField; valor: string }
+type DragState = {
+  anchor: CellCoord
+  pointerX: number
+  pointerY: number
+  didDrag: boolean
+}
+
+function fieldIndex(field: EditableField): number {
+  return EDITABLE_FIELDS.indexOf(field)
+}
+
+function normalizeRange(sel: RangeSelection) {
+  const anchorCol = fieldIndex(sel.anchor.field)
+  const focusCol = fieldIndex(sel.focus.field)
+  return {
+    minRow: Math.min(sel.anchor.row, sel.focus.row),
+    maxRow: Math.max(sel.anchor.row, sel.focus.row),
+    minCol: Math.min(anchorCol, focusCol),
+    maxCol: Math.max(anchorCol, focusCol),
+  }
+}
+
+function isCellInRange(row: number, field: EditableField, sel: RangeSelection | null): boolean {
+  if (!sel) return false
+  const bounds = normalizeRange(sel)
+  const col = fieldIndex(field)
+  return row >= bounds.minRow
+    && row <= bounds.maxRow
+    && col >= bounds.minCol
+    && col <= bounds.maxCol
+}
+
+function countCellsInColumn(sel: RangeSelection | null, field: EditableField): number {
+  if (!sel) return 0
+  const bounds = normalizeRange(sel)
+  const col = fieldIndex(field)
+  if (col < bounds.minCol || col > bounds.maxCol) return 0
+  return bounds.maxRow - bounds.minRow + 1
+}
+
+function linhasNaColunaDoIntervalo(sel: RangeSelection, field: EditableField): Set<number> | null {
+  const bounds = normalizeRange(sel)
+  const col = fieldIndex(field)
+  if (col < bounds.minCol || col > bounds.maxCol) return null
+  return linhasNoIntervalo(bounds.minRow, bounds.maxRow)
+}
 
 function valorParaComparacao(field: EditableField, v: unknown): string {
   if (v == null || v === '') return ''
@@ -107,8 +162,8 @@ export default function MapeamentoPage() {
   const [analise, setAnalise] = useState<AnaliseIA | null>(null)
   const [lancamentos, setLancamentos] = useState<LancamentoAI[]>([])
   const [posicaoFila, setPosicaoFila] = useState<number | null>(null)
-  const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
-  const [columnSelection, setColumnSelection] = useState<ColumnSelection | null>(null)
+  const [selectedCell, setSelectedCell] = useState<CellCoord | null>(null)
+  const [rangeSelection, setRangeSelection] = useState<RangeSelection | null>(null)
   const [selectedRows, setSelectedRows] = useState<Set<number>>(() => new Set())
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDraggingCells, setIsDraggingCells] = useState(false)
@@ -118,53 +173,120 @@ export default function MapeamentoPage() {
   undoStackRef.current = undoStack
   const valorOriginalCelulaRef = useRef<ValorOriginalCelula | null>(null)
   const lastRowClickRef = useRef<number | null>(null)
-  const dragCellsRef = useRef<{ field: EditableField; anchor: number } | null>(null)
+  const dragStateRef = useRef<DragState | null>(null)
 
   const snapshotLancamentos = (items: LancamentoAI[]) =>
     items.map(l => ({ ...l }))
 
   const limparSelecoes = useCallback(() => {
     setSelectedCell(null)
-    setColumnSelection(null)
+    setRangeSelection(null)
     setSelectedRows(new Set())
     valorOriginalCelulaRef.current = null
   }, [])
 
   const isCellHighlighted = useCallback((row: number, field: EditableField) => {
-    if (columnSelection?.field === field && columnSelection.rows.has(row)) return true
-    return selectedCell?.row === row && selectedCell?.field === field
-  }, [columnSelection, selectedCell])
+    return isCellInRange(row, field, rangeSelection)
+  }, [rangeSelection])
 
-  const definirSelecaoColuna = useCallback((
+  const definirSelecao = useCallback((
     row: number,
     field: EditableField,
-    opts?: { shift?: boolean; ctrl?: boolean; anchorRow?: number }
+    opts?: { shift?: boolean; anchor?: CellCoord }
   ) => {
     setSelectedCell({ row, field })
-
-    setColumnSelection(prev => {
+    setRangeSelection(prev => {
       if (opts?.shift) {
-        const anchor = opts.anchorRow ?? row
-        return { field, rows: linhasNoIntervalo(anchor, row) }
+        const anchor = opts.anchor ?? prev?.anchor ?? { row, field }
+        return { anchor, focus: { row, field } }
       }
-      if (opts?.ctrl && prev?.field === field) {
-        const rows = new Set(prev.rows)
-        if (rows.has(row)) rows.delete(row)
-        else rows.add(row)
-        return rows.size ? { field, rows } : { field, rows: new Set([row]) }
-      }
-      return { field, rows: new Set([row]) }
+      return { anchor: { row, field }, focus: { row, field } }
     })
+  }, [])
+
+  const iniciarArraste = useCallback((
+    row: number,
+    field: EditableField,
+    e: React.PointerEvent<HTMLTableCellElement>
+  ) => {
+    if (e.button !== 0) return
+
+    const anchor = e.shiftKey
+      ? (rangeSelection?.anchor ?? selectedCell ?? { row, field })
+      : { row, field }
+
+    dragStateRef.current = {
+      anchor,
+      pointerX: e.clientX,
+      pointerY: e.clientY,
+      didDrag: false,
+    }
+    setIsDraggingCells(true)
+    setSelectedCell({ row, field })
+    setRangeSelection({ anchor, focus: { row, field } })
+  }, [rangeSelection, selectedCell])
+
+  const estenderArraste = useCallback((
+    row: number,
+    field: EditableField,
+    clientX?: number,
+    clientY?: number
+  ) => {
+    const drag = dragStateRef.current
+    if (!drag) return
+
+    const x = clientX ?? drag.pointerX
+    const y = clientY ?? drag.pointerY
+    const dist = Math.hypot(x - drag.pointerX, y - drag.pointerY)
+    const saiuDaOrigem = row !== drag.anchor.row || field !== drag.anchor.field
+    if (!drag.didDrag && dist < DRAG_THRESHOLD_PX && saiuDaOrigem) return
+
+    if (!drag.didDrag) {
+      drag.didDrag = true
+      if (document.activeElement instanceof HTMLInputElement) {
+        document.activeElement.blur()
+      }
+    }
+
+    setRangeSelection({ anchor: drag.anchor, focus: { row, field } })
+    setSelectedCell({ row, field })
+  }, [])
+
+  const finalizarArraste = useCallback((e: React.PointerEvent<HTMLTableCellElement>) => {
+    const didDrag = dragStateRef.current?.didDrag
+    dragStateRef.current = null
+    setIsDraggingCells(false)
+    if (!didDrag) {
+      e.currentTarget.querySelector('input')?.focus()
+    }
   }, [])
 
   useEffect(() => {
     if (!isDraggingCells) return
-    const onMouseUp = () => {
-      dragCellsRef.current = null
+
+    const onPointerMove = (e: PointerEvent) => {
+      const drag = dragStateRef.current
+      if (!drag || drag.didDrag) return
+      const dist = Math.hypot(e.clientX - drag.pointerX, e.clientY - drag.pointerY)
+      if (dist >= DRAG_THRESHOLD_PX) {
+        drag.didDrag = true
+        if (document.activeElement instanceof HTMLInputElement) {
+          document.activeElement.blur()
+        }
+      }
+    }
+
+    const onPointerUp = () => {
+      dragStateRef.current = null
       setIsDraggingCells(false)
     }
-    window.addEventListener('mouseup', onMouseUp)
-    return () => window.removeEventListener('mouseup', onMouseUp)
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+    }
   }, [isDraggingCells])
 
   useEffect(() => {
@@ -291,33 +413,12 @@ export default function MapeamentoPage() {
     valor: unknown,
     e?: React.FocusEvent<HTMLInputElement>
   ) => {
-    const mod = e?.nativeEvent as unknown as { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }
-    const ctrl = !!(mod?.ctrlKey || mod?.metaKey)
+    const mod = e?.nativeEvent as unknown as { shiftKey?: boolean }
     const shift = !!mod?.shiftKey
-    const anchorRow = shift && selectedCell?.field === field ? selectedCell.row : row
-    definirSelecaoColuna(row, field, { ctrl, shift, anchorRow })
+    const anchor = shift ? (rangeSelection?.anchor ?? selectedCell ?? undefined) : undefined
+    definirSelecao(row, field, { shift, anchor })
     valorOriginalCelulaRef.current = { row, field, valor: valorParaComparacao(field, valor) }
-  }, [definirSelecaoColuna, selectedCell])
-
-  const iniciarArrasteColuna = useCallback((
-    row: number,
-    field: EditableField,
-    e: React.MouseEvent
-  ) => {
-    if (e.button !== 0 || (e.target as HTMLElement).tagName === 'INPUT') return
-    e.preventDefault()
-    dragCellsRef.current = { field, anchor: row }
-    setIsDraggingCells(true)
-    const anchorRow = e.shiftKey && selectedCell?.field === field ? selectedCell.row : row
-    definirSelecaoColuna(row, field, { shift: e.shiftKey, anchorRow })
-  }, [definirSelecaoColuna, selectedCell])
-
-  const estenderArrasteColuna = useCallback((row: number, field: EditableField) => {
-    const drag = dragCellsRef.current
-    if (!drag || drag.field !== field) return
-    setColumnSelection({ field, rows: linhasNoIntervalo(drag.anchor, row) })
-    setSelectedCell({ row, field })
-  }, [])
+  }, [definirSelecao, rangeSelection, selectedCell])
 
   const toggleLinhaSelecionada = useCallback((row: number, shift: boolean) => {
     setSelectedRows(prev => {
@@ -379,8 +480,8 @@ export default function MapeamentoPage() {
 
     const valorNovo = formatarCampo(field, lancamentos[row]?.[field])
     const valorAntigo = origem.valor
-    const limitarSelecao = columnSelection?.field === field && columnSelection.rows.size > 0
-      ? columnSelection.rows
+    const limitarSelecao = rangeSelection
+      ? linhasNaColunaDoIntervalo(rangeSelection, field)
       : null
     let alteradas = 0
 
@@ -401,7 +502,7 @@ export default function MapeamentoPage() {
     toast.success(
       `"${FIELD_LABELS[field]}" aplicado em ${alteradas} linha${alteradas !== 1 ? 's' : ''} com "${valorAntigo || '—'}"`
     )
-  }, [selectedCell, lancamentos, columnSelection])
+  }, [selectedCell, lancamentos, rangeSelection])
 
   const aplicarASelecao = useCallback(() => {
     if (!selectedCell) {
@@ -409,10 +510,12 @@ export default function MapeamentoPage() {
       return
     }
     const { row, field } = selectedCell
-    const rows =
-      columnSelection?.field === field && columnSelection.rows.size > 1
-        ? columnSelection.rows
-        : new Set([row])
+    const linhasIntervalo = rangeSelection
+      ? linhasNaColunaDoIntervalo(rangeSelection, field)
+      : null
+    const rows = linhasIntervalo && linhasIntervalo.size > 1
+      ? linhasIntervalo
+      : new Set([row])
 
     const valor = formatarCampo(field, lancamentos[row]?.[field])
     setUndoStack(prev => [...prev, snapshotLancamentos(lancamentos)])
@@ -420,7 +523,7 @@ export default function MapeamentoPage() {
       rows.has(idx) ? { ...l, [field]: valor } : l
     ))
     toast.success(`"${FIELD_LABELS[field]}" aplicado em ${rows.size} célula${rows.size !== 1 ? 's' : ''}`)
-  }, [selectedCell, columnSelection, lancamentos])
+  }, [selectedCell, rangeSelection, lancamentos])
 
   const apagarLinhasSelecionadas = useCallback(() => {
     if (selectedRows.size === 0) {
@@ -455,8 +558,17 @@ export default function MapeamentoPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [status, desfazer])
 
-  const celulasSelecionadas =
-    columnSelection && columnSelection.rows.size > 1 ? columnSelection.rows.size : 0
+  const celulasSelecionadas = selectedCell
+    ? countCellsInColumn(rangeSelection, selectedCell.field)
+    : 0
+
+  const celulaProps = (row: number, field: EditableField) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLTableCellElement>) => iniciarArraste(row, field, e),
+    onPointerEnter: (e: React.PointerEvent<HTMLTableCellElement>) => {
+      if (isDraggingCells) estenderArraste(row, field, e.clientX, e.clientY)
+    },
+    onPointerUp: finalizarArraste,
+  })
 
   const renderCelula = (row: number, field: EditableField, l: LancamentoAI) => {
     const highlighted = isCellHighlighted(row, field)
@@ -464,13 +576,10 @@ export default function MapeamentoPage() {
       <td
         key={field}
         className={cn(
-          'p-1 align-top select-none',
+          'p-1 align-top select-none touch-none',
           highlighted && 'bg-blue-50/80'
         )}
-        onMouseDown={e => iniciarArrasteColuna(row, field, e)}
-        onMouseEnter={() => {
-          if (isDraggingCells) estenderArrasteColuna(row, field)
-        }}
+        {...celulaProps(row, field)}
       >
         <input
           type="text"
@@ -568,7 +677,7 @@ export default function MapeamentoPage() {
           <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-between items-stretch sm:items-center gap-3 mb-4">
             <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3">
               <p className="text-sm text-gray-500">
-                Arraste na coluna (borda da célula) para selecionar várias. Shift+clique estende a seleção.
+                Arraste para selecionar várias células. Shift+clique estende a seleção.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -604,7 +713,7 @@ export default function MapeamentoPage() {
                   onClick={aplicarASelecao}
                   disabled={!selectedCell || celulasSelecionadas < 2}
                   className="flex-1 sm:flex-none touch-manipulation"
-                  title="Copia o valor da célula focada para todas as células selecionadas na mesma coluna"
+                  title="Copia o valor da célula focada para as células selecionadas na mesma coluna"
                 >
                   Aplicar à seleção{celulasSelecionadas > 1 ? ` (${celulasSelecionadas})` : ''}
                 </Button>
@@ -738,13 +847,10 @@ export default function MapeamentoPage() {
                           <td
                             key={field}
                             className={cn(
-                              'p-1 align-top select-none',
+                              'p-1 align-top select-none touch-none',
                               isCellHighlighted(i, field) && 'bg-blue-50/80'
                             )}
-                            onMouseDown={e => iniciarArrasteColuna(i, field, e)}
-                            onMouseEnter={() => {
-                              if (isDraggingCells) estenderArrasteColuna(i, field)
-                            }}
+                            {...celulaProps(i, field)}
                           >
                             <input
                               type="number"
