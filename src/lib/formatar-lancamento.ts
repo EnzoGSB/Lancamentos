@@ -228,7 +228,12 @@ function formatarParteMetragem(part: string): string {
 }
 
 function limparSufixoMetragemParte(part: string): string {
-  return part.trim().replace(/\s*m²$/i, '').replace(/m2$/i, '').trim()
+  return part
+    .trim()
+    .replace(/\s*m²$/i, '')
+    .replace(/m2$/i, '')
+    .replace(/\s*²$/, '')
+    .trim()
 }
 
 function parteTemDecimaisExplicitos(part: string): boolean {
@@ -236,33 +241,68 @@ function parteTemDecimaisExplicitos(part: string): boolean {
   return /,\d/.test(core) || /\.\d{1,2}$/.test(core)
 }
 
-function parseFaixaMetragemComConector(s: string): { p1: string; conector: string; p2: string } | null {
-  const normalized = s.trim().replace(/\s+/g, ' ')
-  const match = normalized.match(/^(.+?)\s+(a|à|até|e)\s+(.+)$/i)
-  if (!match) return null
-  const [, raw1, conn, raw2] = match
-  if (!/\d/.test(raw1) || !/\d/.test(raw2)) return null
-  const c = conn.toLowerCase()
-  const conector = c === 'à' || c === 'até' ? 'a' : c
-  return { p1: raw1, conector, p2: raw2 }
+function normalizarEntradaMetragem(s: string): string {
+  return s
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\bm2\b/gi, 'm²')
+    .replace(/(\d)\s*²(?=\s|$|\s*(?:a|à|até|e|-)\s*|\s*m²)/gi, '$1m²')
 }
 
-function parseFaixaMetragemHifen(s: string): { p1: string; p2: string } | null {
-  const compact = s.trim().replace(/\s+/g, '')
-  const idx = compact.indexOf('-')
-  if (idx <= 0) return null
-  const p1 = compact.slice(0, idx)
-  const p2 = compact.slice(idx + 1)
-  if (!/\d/.test(p1) || !/\d/.test(p2)) return null
-  return { p1, p2 }
+function parteEhMetragem(part: string): boolean {
+  const t = part.trim()
+  if (!/\d/.test(t)) return false
+  if (/\d+\s*º/.test(t) && !/m²|m2|²/i.test(t)) return false
+  const digits = t.replace(/[^\d]/g, '')
+  return digits.length > 0 && digits.length <= 8
 }
 
-/** Valor único ou faixa com conector (a/e) ou hífen. */
+type FaixaMetragem = { p1: string; conector: string; p2: string }
+
+const CONECTORES_FAIXA_METRAGEM = ['até', 'à', 'a', 'e'] as const
+
+function extrairFaixaMetragem(s: string): FaixaMetragem | null {
+  const text = normalizarEntradaMetragem(s)
+  if (!text) return null
+
+  const hyphen = text.match(/^(.+?)\s*-\s*(.+)$/i)
+  if (hyphen && parteEhMetragem(hyphen[1]) && parteEhMetragem(hyphen[2])) {
+    return { p1: hyphen[1].trim(), conector: '-', p2: hyphen[2].trim() }
+  }
+
+  const compact = text.replace(/\s+/g, '')
+
+  for (const conn of CONECTORES_FAIXA_METRAGEM) {
+    const escaped = conn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const spaced = new RegExp(`^(.+?)\\s+${escaped}\\s+(.+)$`, 'i')
+    const spacedMatch = text.match(spaced)
+    if (spacedMatch && parteEhMetragem(spacedMatch[1]) && parteEhMetragem(spacedMatch[2])) {
+      return { p1: spacedMatch[1].trim(), conector: conn, p2: spacedMatch[2].trim() }
+    }
+
+    const glued = new RegExp(`^(.+?m²)${escaped}(.+)$`, 'i')
+    const gluedMatch = compact.match(glued)
+    if (gluedMatch && parteEhMetragem(gluedMatch[1]) && parteEhMetragem(gluedMatch[2])) {
+      return { p1: gluedMatch[1].trim(), conector: conn, p2: gluedMatch[2].trim() }
+    }
+  }
+
+  return null
+}
+
+function formatarFaixaMetragem(faixa: FaixaMetragem): string {
+  const n1 = formatarParteMetragemFiel(faixa.p1)
+  const n2 = formatarParteMetragemFiel(faixa.p2)
+  if (faixa.conector === '-') {
+    return `${n1} m²-${n2} m²`
+  }
+  return `${n1} m² ${faixa.conector} ${n2} m²`
+}
+
+/** Valor único ou faixa com conector (a/e/até) ou hífen. */
 export function metragemTemFaixa(val: string | null | undefined): boolean {
   if (!val?.trim()) return false
-  const s = val.trim().replace(/\s+/g, ' ')
-  if (parseFaixaMetragemComConector(s)) return true
-  return parseFaixaMetragemHifen(s) != null
+  return extrairFaixaMetragem(val) != null
 }
 
 function formatarParteMetragemFiel(part: string): string {
@@ -281,9 +321,8 @@ function formatarParteMetragemFiel(part: string): string {
 /** Min/max para busca e filtros — respeita faixas "98m² a 100m²". */
 export function interpretarFaixaMetragem(val: string | null | undefined): { min: number | null; max: number | null } {
   if (!val?.trim()) return { min: null, max: null }
-  const s = val.trim().replace(/\s+/g, ' ')
 
-  const faixa = parseFaixaMetragemComConector(s)
+  const faixa = extrairFaixaMetragem(val)
   if (faixa) {
     return {
       min: interpretarNumeroMetragem(limparSufixoMetragemParte(faixa.p1)),
@@ -291,15 +330,7 @@ export function interpretarFaixaMetragem(val: string | null | undefined): { min:
     }
   }
 
-  const hifen = parseFaixaMetragemHifen(s)
-  if (hifen) {
-    return {
-      min: interpretarNumeroMetragem(limparSufixoMetragemParte(hifen.p1)),
-      max: interpretarNumeroMetragem(limparSufixoMetragemParte(hifen.p2)),
-    }
-  }
-
-  const n = interpretarNumeroMetragem(limparSufixoMetragemParte(s))
+  const n = interpretarNumeroMetragem(limparSufixoMetragemParte(val))
   return { min: n, max: n }
 }
 
@@ -308,31 +339,24 @@ export function sanitizarMetragemInput(val: string): string {
   return val.replace(/[^\d,.-]/g, '')
 }
 
-/** Preserva conectores de faixa (a/e) durante edição. */
+/** Preserva conectores de faixa (a/e/até) e unidade durante edição. */
 export function sanitizarMetragemTexto(val: string): string {
-  return val
-    .replace(/m²/gi, '')
-    .replace(/m2/gi, '')
-    .replace(/[^\d,.\-\saAeEàÀ]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+  return normalizarEntradaMetragem(val)
 }
 
 /** Valor numérico para edição, sem sufixo m² (com correção de vírgula deslocada). */
 export function metragemParaEdicao(val: string | null | undefined): string {
   if (!val?.trim()) return ''
-  const s = val.trim().replace(/\s+/g, ' ')
 
-  const faixa = parseFaixaMetragemComConector(s)
+  const faixa = extrairFaixaMetragem(val)
   if (faixa) {
-    return `${formatarParteMetragemFiel(faixa.p1)} ${faixa.conector} ${formatarParteMetragemFiel(faixa.p2)}`
+    const n1 = formatarParteMetragemFiel(faixa.p1)
+    const n2 = formatarParteMetragemFiel(faixa.p2)
+    if (faixa.conector === '-') return `${n1}-${n2}`
+    return `${n1} ${faixa.conector} ${n2}`
   }
 
-  const hifen = parseFaixaMetragemHifen(s)
-  if (hifen) {
-    return `${formatarParteMetragemFiel(hifen.p1)}-${formatarParteMetragemFiel(hifen.p2)}`
-  }
-
+  const s = normalizarEntradaMetragem(val)
   const core = limparSufixoMetragemParte(s)
   if (!core) return ''
   if (parteTemDecimaisExplicitos(s)) {
@@ -370,18 +394,11 @@ export function formatarAndar(val: string | null | undefined): string | null {
 
 export function formatarMetragem(val: string | null | undefined): string | null {
   if (!val?.trim()) return null
-  const s = val.trim().replace(/\s+/g, ' ')
 
-  const faixa = parseFaixaMetragemComConector(s)
-  if (faixa) {
-    return `${formatarParteMetragemFiel(faixa.p1)} m² ${faixa.conector} ${formatarParteMetragemFiel(faixa.p2)} m²`
-  }
+  const faixa = extrairFaixaMetragem(val)
+  if (faixa) return formatarFaixaMetragem(faixa)
 
-  const hifen = parseFaixaMetragemHifen(s)
-  if (hifen) {
-    return `${formatarParteMetragemFiel(hifen.p1)}-${formatarParteMetragemFiel(hifen.p2)} m²`
-  }
-
+  const s = normalizarEntradaMetragem(val)
   const core = limparSufixoMetragemParte(s)
   if (!core || !/\d/.test(core)) return null
 
