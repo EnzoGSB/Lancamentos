@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { STATUS_PROCESSAMENTO_OCUPADO } from '@/lib/fila-processamento'
+import {
+  obterProximoPendenteId,
+  prepararFila,
+} from '@/lib/processamento-fila-server'
 
 /** Estado global da fila (sem limite de 50 do dashboard). */
 export async function GET() {
-  await supabaseAdmin
-    .from('processamentos_lancamentos')
-    .delete()
-    .eq('status', 'cancelado')
+  await prepararFila()
 
   const { data: emAndamento, error: busyError } = await supabaseAdmin
     .from('processamentos_lancamentos')
@@ -29,21 +30,11 @@ export async function GET() {
     })
   }
 
-  const { data: proximo, error: nextError } = await supabaseAdmin
-    .from('processamentos_lancamentos')
-    .select('id')
-    .eq('status', 'pendente')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
-
-  if (nextError) {
-    return NextResponse.json({ error: nextError.message }, { status: 500 })
-  }
+  const proximoId = await obterProximoPendenteId()
 
   return NextResponse.json({
     ocupado: false,
     emAndamento: null,
-    proximoId: proximo?.id ?? null,
+    proximoId,
   })
 }

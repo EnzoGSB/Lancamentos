@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { hashPdfContent } from '@/lib/pdf-content-hash'
+import { agendarAvancoFilaServidor } from '@/lib/processamento-fila-server'
 import { v4 as uuidv4 } from 'uuid'
 
 export async function POST(request: NextRequest) {
@@ -66,6 +67,8 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: dbError.message }, { status: 500 })
   }
+
+  agendarAvancoFilaServidor()
 
   return NextResponse.json(data, { status: 201 })
 }

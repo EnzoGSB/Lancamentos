@@ -88,7 +88,7 @@ export async function tentarProcessarProximo(): Promise<{
 
       if (!res.ok) {
         emitirAtualizacao()
-        return { iniciou: true, id: proximoId, erro: data.error || 'Erro ao processar PDF' }
+        continue
       }
 
       emitirAtualizacao()

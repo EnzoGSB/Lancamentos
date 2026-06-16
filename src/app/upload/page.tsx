@@ -104,6 +104,7 @@ export default function UploadPage() {
     }
 
     window.dispatchEvent(new CustomEvent(EVENTO_FILA_ATUALIZADA))
+    void fetch('/api/processamentos/iniciar-proximo', { method: 'POST' })
     void tentarProcessarProximo()
     router.push('/dashboard')
   }, [files, router])
