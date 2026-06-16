@@ -13,8 +13,9 @@ import {
   FIELD_CELL_CLASS,
   formatarCampo,
   metragemParaEdicao,
+  metragemTemFaixa,
   normalizarLancamentos,
-  sanitizarMetragemInput,
+  sanitizarMetragemTexto,
 } from '@/lib/formatar-lancamento'
 import { cn } from '@/lib/utils'
 import { ProcessamentoProgressBar } from '@/components/processamento-progress-bar'
@@ -115,7 +116,7 @@ function parseCellKey(key: string): CellCoord {
 }
 
 function sanitizeValor(field: EditableField, value: unknown): unknown {
-  if (field === 'metragem' && typeof value === 'string') return sanitizarMetragemInput(value)
+  if (field === 'metragem' && typeof value === 'string') return sanitizarMetragemTexto(value)
   if (field === 'valor_minimo' || field === 'valor_maximo') {
     if (typeof value === 'number') return value
     if (value === null || value === '') return null
@@ -679,37 +680,69 @@ export default function MapeamentoPage() {
 
   const renderCelula = (row: number, field: EditableField, l: LancamentoAI) => {
     const highlighted = isCellHighlighted(row, field)
+    const isMetragem = field === 'metragem'
+    const isFaixaMetragem = isMetragem && metragemTemFaixa(l.metragem)
+
     return (
       <td
         key={field}
         className={cn(
           'p-1 align-top select-none touch-none',
+          FIELD_CELL_CLASS[field],
           highlighted && 'bg-blue-50/80'
         )}
         {...celulaProps(row, field)}
       >
-        <input
-          type="text"
-          data-cell={cellKey(row, field)}
-          inputMode={field === 'metragem' ? 'decimal' : undefined}
-          value={field === 'metragem'
-            ? metragemParaEdicao(l[field] as string)
-            : ((l[field] as string) ?? '')}
-          title={(l[field] as string) ?? undefined}
-          onChange={e => updateValorSelecao(row, field, e.target.value)}
-          onFocus={e => {
-            registrarFocusCelula(row, field, l[field], e)
-            if (selectedCells.size > 1 && selectedCells.has(cellKey(row, field))) {
-              e.target.select()
-            }
-            if (field === 'metragem' && l.metragem) {
-              const num = metragemParaEdicao(l.metragem)
-              if (num !== l.metragem) updateValorSelecao(row, 'metragem', num)
-            }
-          }}
-          onBlur={() => blurCampoSelecao(row, field)}
-          className={inputClass(highlighted, field)}
-        />
+        {isMetragem ? (
+          <div className={cn(
+            'flex min-w-0 items-center overflow-hidden',
+            isFaixaMetragem ? '' : 'justify-end gap-0.5'
+          )}>
+            <input
+              type="text"
+              data-cell={cellKey(row, field)}
+              inputMode={isFaixaMetragem ? 'text' : 'decimal'}
+              value={metragemParaEdicao(l.metragem)}
+              title={l.metragem ?? undefined}
+              onChange={e => updateValorSelecao(row, field, e.target.value)}
+              onFocus={e => {
+                registrarFocusCelula(row, field, l.metragem, e)
+                if (selectedCells.size > 1 && selectedCells.has(cellKey(row, field))) {
+                  e.target.select()
+                }
+                if (l.metragem && !metragemTemFaixa(l.metragem)) {
+                  const num = metragemParaEdicao(l.metragem)
+                  if (num !== l.metragem) updateValorSelecao(row, 'metragem', num)
+                }
+              }}
+              onBlur={() => blurCampoSelecao(row, field)}
+              className={cn(
+                inputClass(highlighted, field),
+                'min-w-0',
+                isFaixaMetragem ? 'w-full' : 'flex-1 text-right'
+              )}
+            />
+            {!isFaixaMetragem && (
+              <span className="shrink-0 text-[0.85em] text-gray-400">m²</span>
+            )}
+          </div>
+        ) : (
+          <input
+            type="text"
+            data-cell={cellKey(row, field)}
+            value={(l[field] as string) ?? ''}
+            title={(l[field] as string) ?? undefined}
+            onChange={e => updateValorSelecao(row, field, e.target.value)}
+            onFocus={e => {
+              registrarFocusCelula(row, field, l[field], e)
+              if (selectedCells.size > 1 && selectedCells.has(cellKey(row, field))) {
+                e.target.select()
+              }
+            }}
+            onBlur={() => blurCampoSelecao(row, field)}
+            className={inputClass(highlighted, field)}
+          />
+        )}
       </td>
     )
   }
@@ -888,7 +921,7 @@ export default function MapeamentoPage() {
                     <col style={{ width: '11%' }} />
                     <col style={{ width: '5%' }} />
                     <col style={{ width: '5%' }} />
-                    <col style={{ width: '6%' }} />
+                    <col style={{ width: '7%' }} />
                     <col style={{ width: '5%' }} />
                     <col style={{ width: '9%' }} />
                     <col style={{ width: '9%' }} />
@@ -950,6 +983,7 @@ export default function MapeamentoPage() {
                             key={field}
                             className={cn(
                               'p-1 align-top select-none touch-none',
+                              FIELD_CELL_CLASS[field],
                               isCellHighlighted(i, field) && 'bg-blue-50/80'
                             )}
                             {...celulaProps(i, field)}

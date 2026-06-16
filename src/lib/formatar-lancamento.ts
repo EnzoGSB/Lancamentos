@@ -227,21 +227,122 @@ function formatarParteMetragem(part: string): string {
   return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-/** Mantém só dígitos e separadores válidos (vírgula, ponto, hífen para faixas). */
+function limparSufixoMetragemParte(part: string): string {
+  return part.trim().replace(/\s*m²$/i, '').replace(/m2$/i, '').trim()
+}
+
+function parteTemDecimaisExplicitos(part: string): boolean {
+  const core = limparSufixoMetragemParte(part)
+  return /,\d/.test(core) || /\.\d{1,2}$/.test(core)
+}
+
+function parseFaixaMetragemComConector(s: string): { p1: string; conector: string; p2: string } | null {
+  const normalized = s.trim().replace(/\s+/g, ' ')
+  const match = normalized.match(/^(.+?)\s+(a|à|até|e)\s+(.+)$/i)
+  if (!match) return null
+  const [, raw1, conn, raw2] = match
+  if (!/\d/.test(raw1) || !/\d/.test(raw2)) return null
+  const c = conn.toLowerCase()
+  const conector = c === 'à' || c === 'até' ? 'a' : c
+  return { p1: raw1, conector, p2: raw2 }
+}
+
+function parseFaixaMetragemHifen(s: string): { p1: string; p2: string } | null {
+  const compact = s.trim().replace(/\s+/g, '')
+  const idx = compact.indexOf('-')
+  if (idx <= 0) return null
+  const p1 = compact.slice(0, idx)
+  const p2 = compact.slice(idx + 1)
+  if (!/\d/.test(p1) || !/\d/.test(p2)) return null
+  return { p1, p2 }
+}
+
+/** Valor único ou faixa com conector (a/e) ou hífen. */
+export function metragemTemFaixa(val: string | null | undefined): boolean {
+  if (!val?.trim()) return false
+  const s = val.trim().replace(/\s+/g, ' ')
+  if (parseFaixaMetragemComConector(s)) return true
+  return parseFaixaMetragemHifen(s) != null
+}
+
+function formatarParteMetragemFiel(part: string): string {
+  const core = limparSufixoMetragemParte(part)
+  if (!core || !/\d/.test(core)) return part.trim()
+
+  const num = interpretarNumeroMetragem(core)
+  if (num == null) return core
+
+  if (parteTemDecimaisExplicitos(part)) {
+    return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+  return String(Math.round(num))
+}
+
+/** Min/max para busca e filtros — respeita faixas "98m² a 100m²". */
+export function interpretarFaixaMetragem(val: string | null | undefined): { min: number | null; max: number | null } {
+  if (!val?.trim()) return { min: null, max: null }
+  const s = val.trim().replace(/\s+/g, ' ')
+
+  const faixa = parseFaixaMetragemComConector(s)
+  if (faixa) {
+    return {
+      min: interpretarNumeroMetragem(limparSufixoMetragemParte(faixa.p1)),
+      max: interpretarNumeroMetragem(limparSufixoMetragemParte(faixa.p2)),
+    }
+  }
+
+  const hifen = parseFaixaMetragemHifen(s)
+  if (hifen) {
+    return {
+      min: interpretarNumeroMetragem(limparSufixoMetragemParte(hifen.p1)),
+      max: interpretarNumeroMetragem(limparSufixoMetragemParte(hifen.p2)),
+    }
+  }
+
+  const n = interpretarNumeroMetragem(limparSufixoMetragemParte(s))
+  return { min: n, max: n }
+}
+
+/** Mantém só dígitos e separadores válidos em valor único (vírgula, ponto, hífen). */
 export function sanitizarMetragemInput(val: string): string {
   return val.replace(/[^\d,.-]/g, '')
+}
+
+/** Preserva conectores de faixa (a/e) durante edição. */
+export function sanitizarMetragemTexto(val: string): string {
+  return val
+    .replace(/m²/gi, '')
+    .replace(/m2/gi, '')
+    .replace(/[^\d,.\-\saAeEàÀ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 /** Valor numérico para edição, sem sufixo m² (com correção de vírgula deslocada). */
 export function metragemParaEdicao(val: string | null | undefined): string {
   if (!val?.trim()) return ''
-  const core = sanitizarMetragemInput(
-    val.trim().replace(/\s+/g, '').replace(/m²$/i, '').replace(/m2$/i, '')
-  )
+  const s = val.trim().replace(/\s+/g, ' ')
+
+  const faixa = parseFaixaMetragemComConector(s)
+  if (faixa) {
+    return `${formatarParteMetragemFiel(faixa.p1)} ${faixa.conector} ${formatarParteMetragemFiel(faixa.p2)}`
+  }
+
+  const hifen = parseFaixaMetragemHifen(s)
+  if (hifen) {
+    return `${formatarParteMetragemFiel(hifen.p1)}-${formatarParteMetragemFiel(hifen.p2)}`
+  }
+
+  const core = limparSufixoMetragemParte(s)
   if (!core) return ''
+  if (parteTemDecimaisExplicitos(s)) {
+    const num = interpretarNumeroMetragem(core)
+    if (num == null) return core
+    return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
   const num = interpretarNumeroMetragem(core)
   if (num == null) return core
-  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return String(Math.round(num))
 }
 
 export function formatarAndar(val: string | null | undefined): string | null {
@@ -269,14 +370,28 @@ export function formatarAndar(val: string | null | undefined): string | null {
 
 export function formatarMetragem(val: string | null | undefined): string | null {
   if (!val?.trim()) return null
-  let s = sanitizarMetragemInput(val.trim().replace(/\s+/g, ''))
-  if (!s || !/\d/.test(s)) return null
+  const s = val.trim().replace(/\s+/g, ' ')
 
-  if (s.includes('-')) {
-    const [a, b] = s.split('-')
-    return `${formatarParteMetragem(a)}-${formatarParteMetragem(b)}m²`
+  const faixa = parseFaixaMetragemComConector(s)
+  if (faixa) {
+    return `${formatarParteMetragemFiel(faixa.p1)} m² ${faixa.conector} ${formatarParteMetragemFiel(faixa.p2)} m²`
   }
-  return `${formatarParteMetragem(s)}m²`
+
+  const hifen = parseFaixaMetragemHifen(s)
+  if (hifen) {
+    return `${formatarParteMetragemFiel(hifen.p1)}-${formatarParteMetragemFiel(hifen.p2)} m²`
+  }
+
+  const core = limparSufixoMetragemParte(s)
+  if (!core || !/\d/.test(core)) return null
+
+  if (parteTemDecimaisExplicitos(s)) {
+    return `${formatarParteMetragem(core)} m²`
+  }
+
+  const num = interpretarNumeroMetragem(core)
+  if (num == null) return null
+  return `${formatarParteMetragemFiel(s)} m²`
 }
 
 function formatarTipologiaInterno(val: string): string {
@@ -385,22 +500,42 @@ export function normalizarLancamentos(
   return items.map(l => normalizarLancamento(l, textoNativo))
 }
 
+export const CAMPO_VAZIO = '—'
+
+export function formatValorMoeda(v: number | null | undefined): string {
+  if (v == null) return CAMPO_VAZIO
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
+}
+
 export function exibirCampo(
-  field: 'tipologia' | 'andar' | 'metragem' | 'data_entrega',
+  field: 'tipologia' | 'andar' | 'metragem' | 'data_entrega' | 'vagas' | 'desconto_margem',
   val: string | null | undefined
 ): string {
   const formatted = formatarCampo(field, val)
-  if (formatted == null || formatted === '') return '—'
+  if (formatted == null || formatted === '') return CAMPO_VAZIO
   return String(formatted)
 }
 
-export const FIELD_CELL_CLASS: Partial<Record<CampoFormatavel | 'unidade' | 'valor_minimo' | 'valor_maximo', string>> = {
+export type CampoCelula =
+  | CampoFormatavel
+  | 'unidade'
+  | 'valor_minimo'
+  | 'valor_maximo'
+  | 'construtora'
+  | 'empreendimento'
+  | 'bairro'
+
+export const FIELD_CELL_CLASS: Partial<Record<CampoCelula, string>> = {
+  construtora: 'min-w-0',
+  empreendimento: 'min-w-0',
+  bairro: 'min-w-0',
   tipologia: 'min-w-0',
   unidade: 'min-w-0 tabular-nums text-center',
-  andar: 'min-w-0 tabular-nums',
-  metragem: 'min-w-0 tabular-nums text-right',
-  data_entrega: 'min-w-0',
+  andar: 'min-w-0 tabular-nums whitespace-nowrap',
+  metragem: 'min-w-0 max-w-full tabular-nums text-right overflow-hidden',
+  data_entrega: 'min-w-0 tabular-nums whitespace-nowrap',
   vagas: 'min-w-0 tabular-nums text-center',
-  valor_minimo: 'min-w-0 text-right tabular-nums',
-  valor_maximo: 'min-w-0 text-right tabular-nums',
+  valor_minimo: 'min-w-0 text-right tabular-nums whitespace-nowrap',
+  valor_maximo: 'min-w-0 text-right tabular-nums whitespace-nowrap',
+  desconto_margem: 'min-w-0',
 }

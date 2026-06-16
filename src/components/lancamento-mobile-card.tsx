@@ -2,11 +2,13 @@ import type { Lancamento } from '@/lib/types'
 import { exibirCampo } from '@/lib/formatar-lancamento'
 import { exibirDormitoriosImovel, exibirTipoImovel } from '@/lib/tipologia-filtro'
 import { VerPdfButton } from '@/components/ver-pdf-button'
+import {
+  MetragemExibicao,
+  TextoCampoExibicao,
+  ValorMoedaExibicao,
+  VagasExibicao,
+} from '@/components/lancamento-campos'
 import { cn } from '@/lib/utils'
-
-function formatValor(v: number | null) {
-  return v != null ? `R$ ${v.toLocaleString('pt-BR')}` : '—'
-}
 
 type LancamentoMobileCardProps = {
   lancamento: Lancamento
@@ -39,15 +41,21 @@ export function LancamentoMobileCard({ lancamento: l, showPdf = true, fontSizePx
         </div>
         <div>
           <dt className={labelClass} style={labelStyle}>Unidade</dt>
-          <dd className="text-gray-900 tabular-nums">{l.unidade ?? '—'}</dd>
+          <dd className="text-gray-900 tabular-nums">
+            <TextoCampoExibicao value={l.unidade} />
+          </dd>
         </div>
         <div>
           <dt className={labelClass} style={labelStyle}>Metragem</dt>
-          <dd className="text-gray-900 tabular-nums">{exibirCampo('metragem', l.metragem)}</dd>
+          <dd className="text-gray-900">
+            <MetragemExibicao value={l.metragem} />
+          </dd>
         </div>
         <div>
           <dt className={labelClass} style={labelStyle}>Vagas</dt>
-          <dd className="text-gray-900">{l.vagas ?? '—'}</dd>
+          <dd>
+            <VagasExibicao value={l.vagas} />
+          </dd>
         </div>
         <div>
           <dt className={labelClass} style={labelStyle}>Entrega</dt>
@@ -55,16 +63,21 @@ export function LancamentoMobileCard({ lancamento: l, showPdf = true, fontSizePx
         </div>
         <div>
           <dt className={labelClass} style={labelStyle}>Desconto</dt>
-          <dd className="text-gray-900">{l.desconto_margem ?? '—'}</dd>
+          <dd className="text-gray-900">
+            <TextoCampoExibicao value={l.desconto_margem} />
+          </dd>
         </div>
       </dl>
       <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-gray-100">
         <div>
           <span className="text-gray-500" style={labelStyle}>Valor: </span>
           <span className="font-semibold text-gray-900 tabular-nums">
-            {formatValor(l.valor_minimo)}
+            <ValorMoedaExibicao value={l.valor_minimo} />
             {l.valor_maximo != null && l.valor_maximo !== l.valor_minimo && (
-              <> – {formatValor(l.valor_maximo)}</>
+              <>
+                {' '}
+                – <ValorMoedaExibicao value={l.valor_maximo} />
+              </>
             )}
           </span>
         </div>

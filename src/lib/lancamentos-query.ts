@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Lancamento } from './types'
-import { interpretarNumeroMetragem, removerSufixoLixoTipologia } from './formatar-lancamento'
+import { interpretarFaixaMetragem, removerSufixoLixoTipologia } from './formatar-lancamento'
 import {
   isBuscaTipologiaComercial,
   matchesConsultaTexto,
@@ -105,15 +105,7 @@ export function textoCompletoImovel(l: Lancamento): string {
 }
 
 export function parseMetragemM2(val: string | null | undefined): { min: number | null; max: number | null } {
-  if (!val?.trim()) return { min: null, max: null }
-  const core = val.trim().replace(/\s+/g, '').replace(/m²?2?$/i, '')
-  const parseNum = (s: string) => interpretarNumeroMetragem(s)
-  if (core.includes('-')) {
-    const [a, b] = core.split('-')
-    return { min: parseNum(a), max: parseNum(b) }
-  }
-  const n = parseNum(core)
-  return { min: n, max: n }
+  return interpretarFaixaMetragem(val)
 }
 
 export function extrairSuites(tipologia: string | null | undefined): number | null {

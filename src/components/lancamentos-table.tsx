@@ -2,17 +2,17 @@ import type { Lancamento } from '@/lib/types'
 import { exibirCampo } from '@/lib/formatar-lancamento'
 import { exibirDormitoriosImovel, exibirTipoImovel } from '@/lib/tipologia-filtro'
 import { VerPdfButton } from '@/components/ver-pdf-button'
+import {
+  LANCAMENTO_TD,
+  LANCAMENTO_TD_NUM,
+  LANCAMENTO_TD_WRAP,
+  LANCAMENTO_TH,
+  MetragemExibicao,
+  TextoCampoExibicao,
+  ValorMoedaExibicao,
+  VagasExibicao,
+} from '@/components/lancamento-campos'
 import { cn } from '@/lib/utils'
-
-function formatValor(v: number | null) {
-  if (v == null) return '—'
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
-}
-
-const TH = 'text-left p-1.5 font-medium text-gray-500 leading-tight align-bottom whitespace-normal'
-const TD = 'p-1.5 align-top leading-snug'
-const TD_WRAP = cn(TD, 'break-words [overflow-wrap:anywhere]')
-const TD_NUM = cn(TD, 'tabular-nums whitespace-nowrap')
 
 type LancamentosTableProps = {
   lancamentos: Lancamento[]
@@ -35,7 +35,7 @@ export function LancamentosTable({ lancamentos, showPdf = true, fontSizePx }: La
         <col style={{ width: '7%' }} />
         <col style={{ width: '5%' }} />
         <col style={{ width: '5%' }} />
-        <col style={{ width: '5%' }} />
+        <col style={{ width: '7%' }} />
         <col style={{ width: '5%' }} />
         <col style={{ width: '8%' }} />
         <col style={{ width: '8%' }} />
@@ -44,40 +44,54 @@ export function LancamentosTable({ lancamentos, showPdf = true, fontSizePx }: La
       </colgroup>
       <thead>
         <tr className="border-b bg-gray-50">
-          <th className={TH}>Construtora</th>
-          <th className={TH}>Empreendimento</th>
-          <th className={TH}>Bairro</th>
-          <th className={TH}>Entrega</th>
-          <th className={TH}>Tipo</th>
-          <th className={TH}>Dormitórios</th>
-          <th className={TH}>Unidade</th>
-          <th className={TH}>Andar</th>
-          <th className={TH}>m²</th>
-          <th className={TH}>Vagas</th>
-          <th className={TH}>Mínimo</th>
-          <th className={TH}>Máximo</th>
-          <th className={TH}>Desconto</th>
-          {showPdf && <th className={TH}>PDF</th>}
+          <th className={LANCAMENTO_TH}>Construtora</th>
+          <th className={LANCAMENTO_TH}>Empreendimento</th>
+          <th className={LANCAMENTO_TH}>Bairro</th>
+          <th className={LANCAMENTO_TH}>Entrega</th>
+          <th className={LANCAMENTO_TH}>Tipo</th>
+          <th className={LANCAMENTO_TH}>Dormitórios</th>
+          <th className={LANCAMENTO_TH}>Unidade</th>
+          <th className={LANCAMENTO_TH}>Andar</th>
+          <th className={LANCAMENTO_TH}>m²</th>
+          <th className={LANCAMENTO_TH}>Vagas</th>
+          <th className={LANCAMENTO_TH}>Mínimo</th>
+          <th className={LANCAMENTO_TH}>Máximo</th>
+          <th className={LANCAMENTO_TH}>Desconto</th>
+          {showPdf && <th className={LANCAMENTO_TH}>PDF</th>}
         </tr>
       </thead>
       <tbody>
         {lancamentos.map(l => (
           <tr key={l.id} className="border-b hover:bg-gray-50">
-            <td className={cn(TD_WRAP, 'font-medium')}>{l.construtora}</td>
-            <td className={TD_WRAP} title={l.empreendimento}>{l.empreendimento}</td>
-            <td className={TD_WRAP}>{l.bairro ?? '—'}</td>
-            <td className={TD_NUM}>{exibirCampo('data_entrega', l.data_entrega)}</td>
-            <td className={TD_WRAP}>{exibirTipoImovel(l.tipologia)}</td>
-            <td className={TD_WRAP}>{exibirDormitoriosImovel(l.tipologia)}</td>
-            <td className={cn(TD_NUM, 'text-center')}>{l.unidade ?? '—'}</td>
-            <td className={TD_NUM}>{exibirCampo('andar', l.andar)}</td>
-            <td className={cn(TD_NUM, 'text-right')}>{exibirCampo('metragem', l.metragem)}</td>
-            <td className={cn(TD_NUM, 'text-center')}>{l.vagas ?? '—'}</td>
-            <td className={cn(TD_NUM, 'text-right')}>{formatValor(l.valor_minimo)}</td>
-            <td className={cn(TD_NUM, 'text-right')}>{formatValor(l.valor_maximo)}</td>
-            <td className={TD_WRAP}>{l.desconto_margem ?? '—'}</td>
+            <td className={cn(LANCAMENTO_TD_WRAP, 'font-medium')}>{l.construtora}</td>
+            <td className={LANCAMENTO_TD_WRAP} title={l.empreendimento}>{l.empreendimento}</td>
+            <td className={LANCAMENTO_TD_WRAP}>
+              <TextoCampoExibicao value={l.bairro} />
+            </td>
+            <td className={LANCAMENTO_TD_NUM}>{exibirCampo('data_entrega', l.data_entrega)}</td>
+            <td className={LANCAMENTO_TD_WRAP}>{exibirTipoImovel(l.tipologia)}</td>
+            <td className={LANCAMENTO_TD_WRAP}>{exibirDormitoriosImovel(l.tipologia)}</td>
+            <td className={cn(LANCAMENTO_TD_NUM, 'text-center')}>
+              <TextoCampoExibicao value={l.unidade} />
+            </td>
+            <td className={LANCAMENTO_TD_NUM}>{exibirCampo('andar', l.andar)}</td>
+            <td className={cn(LANCAMENTO_TD_NUM, 'text-right overflow-hidden')}>
+              <MetragemExibicao value={l.metragem} className="w-full" />
+            </td>
+            <td className={cn(LANCAMENTO_TD_NUM, 'text-center')}>
+              <VagasExibicao value={l.vagas} />
+            </td>
+            <td className={cn(LANCAMENTO_TD_NUM, 'text-right')}>
+              <ValorMoedaExibicao value={l.valor_minimo} />
+            </td>
+            <td className={cn(LANCAMENTO_TD_NUM, 'text-right')}>
+              <ValorMoedaExibicao value={l.valor_maximo} />
+            </td>
+            <td className={LANCAMENTO_TD_WRAP}>
+              <TextoCampoExibicao value={l.desconto_margem} />
+            </td>
             {showPdf && (
-              <td className={TD}>
+              <td className={LANCAMENTO_TD}>
                 <VerPdfButton processamentoId={l.processamento_id} size="xs" />
               </td>
             )}
