@@ -65,3 +65,24 @@ export async function salvarExtracaoCache(
     console.warn('[extracao-cache] falha ao salvar:', error.message)
   }
 }
+
+/** Remove cache de extração de um PDF (uso pontual — não altera o comportamento padrão). */
+export async function apagarExtracaoCache(
+  supabase: SupabaseClient,
+  contentHash: string
+): Promise<{ removed: boolean }> {
+  if (!contentHash.trim()) return { removed: false }
+
+  const { data, error } = await supabase
+    .from('extracao_pdf_cache')
+    .delete()
+    .eq('content_hash', contentHash)
+    .select('content_hash')
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return { removed: data != null }
+}
