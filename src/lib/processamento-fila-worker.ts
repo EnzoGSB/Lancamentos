@@ -13,10 +13,40 @@ function emitirAtualizacao() {
   window.dispatchEvent(new CustomEvent(EVENTO_FILA_ATUALIZADA))
 }
 
+type FilaStatus = {
+  ocupado: boolean
+  proximoId: string | null
+  emAndamento?: { id: string; original_filename?: string | null } | null
+  error?: string
+}
+
+async function buscarStatusFila(): Promise<FilaStatus> {
+  const res = await fetch('/api/processamentos/fila')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    return { ocupado: false, proximoId: null, error: data.error || 'Erro ao consultar fila' }
+  }
+  return data as FilaStatus
+}
+
+/** Fallback local quando a API de fila não estiver disponível. */
 async function buscarProcessamentos(): Promise<ProcessamentoMin[]> {
   const res = await fetch('/api/processamentos')
   const data = await res.json()
   return Array.isArray(data) ? data : []
+}
+
+async function resolverProximoId(): Promise<{ proximoId: string | null; ocupado: boolean; erro?: string }> {
+  const fila = await buscarStatusFila()
+  if (!fila.error) {
+    return { proximoId: fila.proximoId, ocupado: fila.ocupado }
+  }
+
+  const processamentos = await buscarProcessamentos()
+  if (haProcessamentoEmAndamento(processamentos)) {
+    return { proximoId: null, ocupado: true }
+  }
+  return { proximoId: proximoPendente(processamentos)?.id ?? null, ocupado: false, erro: fila.error }
 }
 
 export async function tentarProcessarProximo(): Promise<{
@@ -30,19 +60,19 @@ export async function tentarProcessarProximo(): Promise<{
   workerLocked = true
   try {
     while (true) {
-      const processamentos = await buscarProcessamentos()
+      const { proximoId, ocupado, erro } = await resolverProximoId()
+      if (erro && !proximoId && !ocupado) return { iniciou: false, erro }
 
-      if (haProcessamentoEmAndamento(processamentos)) {
+      if (ocupado) {
         return { iniciou: false, ocupado: true }
       }
 
-      const proximo = proximoPendente(processamentos)
-      if (!proximo) return { iniciou: false }
+      if (!proximoId) return { iniciou: false }
 
       const res = await fetch('/api/processar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processamentoId: proximo.id }),
+        body: JSON.stringify({ processamentoId: proximoId }),
       })
 
       const data = await res.json().catch(() => ({}))
@@ -58,11 +88,11 @@ export async function tentarProcessarProximo(): Promise<{
 
       if (!res.ok) {
         emitirAtualizacao()
-        return { iniciou: true, id: proximo.id, erro: data.error || 'Erro ao processar PDF' }
+        return { iniciou: true, id: proximoId, erro: data.error || 'Erro ao processar PDF' }
       }
 
       emitirAtualizacao()
-      return { iniciou: true, id: proximo.id }
+      return { iniciou: true, id: proximoId }
     }
   } catch {
     emitirAtualizacao()

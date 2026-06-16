@@ -108,7 +108,7 @@ function ProcessamentoRow({
         )}
         {p.status === 'pendente' && (
           <span className="text-sm px-4 py-1.5 bg-gray-100 text-gray-600 rounded">
-            {naFila ? 'Na fila' : 'Aguardando'}
+            {naFila ? 'Na fila' : 'Iniciando…'}
           </span>
         )}
         <Button

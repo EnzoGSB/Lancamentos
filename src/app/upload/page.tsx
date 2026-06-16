@@ -6,7 +6,7 @@ import { X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { EVENTO_FILA_ATUALIZADA } from '@/lib/processamento-fila-worker'
+import { EVENTO_FILA_ATUALIZADA, tentarProcessarProximo } from '@/lib/processamento-fila-worker'
 
 const MAX_ARQUIVOS = 20
 const MAX_MB = 50
@@ -104,6 +104,7 @@ export default function UploadPage() {
     }
 
     window.dispatchEvent(new CustomEvent(EVENTO_FILA_ATUALIZADA))
+    void tentarProcessarProximo()
     router.push('/dashboard')
   }, [files, router])
 

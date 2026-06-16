@@ -8,8 +8,8 @@ export type ProcessamentoMin = {
 /** Status visíveis como “processando” na UI. */
 export const STATUS_PROCESSAMENTO_OCUPADO = ['extraindo', 'analisando', 'processando'] as const
 
-/** Status que bloqueiam o próximo da fila (inclui cancelamento pendente de encerramento). */
-export const STATUS_SLOT_OCUPADO = [...STATUS_PROCESSAMENTO_OCUPADO, 'cancelado'] as const
+/** Status que bloqueiam o próximo da fila no servidor (processamento ativo). */
+export const STATUS_SLOT_OCUPADO = [...STATUS_PROCESSAMENTO_OCUPADO] as const
 
 export const STATUS_EM_PROGRESSO = [
   ...STATUS_PROCESSAMENTO_OCUPADO,
@@ -26,7 +26,7 @@ function ordenarPendentes(pendentes: ProcessamentoMin[]) {
 
 export function haProcessamentoEmAndamento(processamentos: ProcessamentoMin[]): boolean {
   return processamentos.some(p =>
-    STATUS_SLOT_OCUPADO.includes(p.status as (typeof STATUS_SLOT_OCUPADO)[number])
+    STATUS_PROCESSAMENTO_OCUPADO.includes(p.status as (typeof STATUS_PROCESSAMENTO_OCUPADO)[number])
   )
 }
 
@@ -68,7 +68,17 @@ export function resumoFilaGlobal(processamentos: ProcessamentoMin[]): ResumoFila
   }
 }
 
-/** IDs com status pendente (aguardando slot). */
+/** IDs aguardando slot (exclui o primeiro da fila quando nada está processando). */
 export function idsAguardandoFila(processamentos: ProcessamentoMin[]): Set<string> {
-  return new Set(processamentos.filter(p => p.status === 'pendente').map(p => p.id))
+  const pendentes = ordenarPendentes(processamentos.filter(p => p.status === 'pendente'))
+  if (pendentes.length === 0) return new Set()
+
+  const ocupado = processamentos.some(p =>
+    STATUS_PROCESSAMENTO_OCUPADO.includes(p.status as (typeof STATUS_PROCESSAMENTO_OCUPADO)[number])
+  )
+  if (ocupado) {
+    return new Set(pendentes.map(p => p.id))
+  }
+
+  return new Set(pendentes.slice(1).map(p => p.id))
 }
