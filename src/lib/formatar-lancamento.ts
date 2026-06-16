@@ -491,6 +491,58 @@ function formatarTextoCampo(val: string | null | undefined): string | null {
   return val.trim().replace(/\s+/g, ' ')
 }
 
+const PADRAO_PRECO_TEXTO = /R\$\s*[\d.]+(?:,\d{2})?|\b\d{1,3}(?:\.\d{3}){2,}(?:,\d{2})?\b/
+
+function valorNumericoPositivo(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function lancamentoTemPreco(l: LancamentoAI): boolean {
+  return valorNumericoPositivo(l.valor_minimo) != null || valorNumericoPositivo(l.valor_maximo) != null
+}
+
+function normalizarCodigoUnidade(unidade: string): string {
+  return unidade.trim().replace(/^ap\.?\s*/i, '').trim()
+}
+
+/** Unidade e valor monetário na mesma linha do texto nativo (tabela de vendas). */
+export function unidadeTemPrecoNoTextoNativo(unidade: string, textoNativo: string): boolean {
+  const codigo = normalizarCodigoUnidade(unidade)
+  if (!codigo || !textoNativo.trim()) return false
+
+  const escaped = codigo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const unitRe = new RegExp(`\\b${escaped}\\b`, 'i')
+
+  for (const linha of textoNativo.split(/\r?\n/)) {
+    if (!unitRe.test(linha)) continue
+    if (PADRAO_PRECO_TEXTO.test(linha)) return true
+  }
+
+  return false
+}
+
+/**
+ * Remove linhas de planta/mapa: unidade sem preço na extração e sem preço no texto nativo.
+ * Mantém tipologias agregadas (sem unidade) e linhas com preço cortado na imagem mas presente no texto.
+ */
+export function filtrarLinhasPlantaSemPreco(
+  items: LancamentoAI[],
+  textoNativo = ''
+): LancamentoAI[] {
+  return items.filter(l => {
+    if (lancamentoTemPreco(l)) return true
+
+    const unidade = (l.unidade ?? '').trim()
+    if (!unidade) return true
+
+    if (!textoNativo.trim()) return false
+
+    return unidadeTemPrecoNoTextoNativo(unidade, textoNativo)
+  })
+}
+
 export function normalizarLancamento(
   l: LancamentoAI,
   textoNativo = ''
@@ -514,7 +566,8 @@ export function normalizarLancamentos(
   items: LancamentoAI[],
   textoNativo = ''
 ): LancamentoAI[] {
-  return items.map(l => normalizarLancamento(l, textoNativo))
+  const normalizados = items.map(l => normalizarLancamento(l, textoNativo))
+  return filtrarLinhasPlantaSemPreco(normalizados, textoNativo)
 }
 
 export const CAMPO_VAZIO = '—'
