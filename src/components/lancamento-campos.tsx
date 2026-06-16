@@ -4,13 +4,12 @@ import {
   exibirCampo,
   formatValorMoeda,
   formatarVagas,
-  metragemTemFaixa,
 } from '@/lib/formatar-lancamento'
 import { cn } from '@/lib/utils'
 
 export const LANCAMENTO_TH =
-  'text-left p-1.5 font-medium text-gray-500 leading-tight align-bottom whitespace-normal'
-export const LANCAMENTO_TD = 'p-1.5 align-top leading-snug'
+  'text-left px-2 py-1.5 font-medium text-gray-500 leading-tight align-bottom whitespace-normal'
+export const LANCAMENTO_TD = 'px-2 py-1.5 align-top leading-snug'
 export const LANCAMENTO_TD_WRAP = cn(LANCAMENTO_TD, 'break-words [overflow-wrap:anywhere]')
 export const LANCAMENTO_TD_NUM = cn(LANCAMENTO_TD, 'tabular-nums whitespace-nowrap')
 
@@ -28,33 +27,9 @@ export function MetragemExibicao({
   const texto = exibirCampo('metragem', value)
   if (texto === CAMPO_VAZIO) return <CampoVazio className={className} />
 
-  if (metragemTemFaixa(value)) {
-    return (
-      <span className={cn('block truncate tabular-nums', className)} title={texto}>
-        {texto}
-      </span>
-    )
-  }
-
-  const match = texto.match(/^(.+?)\s+m²$/i)
-  if (!match) {
-    return (
-      <span className={cn('block truncate tabular-nums', className)} title={texto}>
-        {texto}
-      </span>
-    )
-  }
-
   return (
-    <span
-      className={cn(
-        'inline-flex max-w-full items-baseline justify-end gap-0.5 tabular-nums',
-        className
-      )}
-      title={texto}
-    >
-      <span className="truncate">{match[1]}</span>
-      <span className="shrink-0 text-[0.85em] text-gray-400">m²</span>
+    <span className={cn('tabular-nums whitespace-nowrap', className)} title={texto}>
+      {texto}
     </span>
   )
 }
@@ -91,7 +66,11 @@ export function ValorMoedaExibicao({
 }) {
   const texto = formatValorMoeda(value)
   if (texto === CAMPO_VAZIO) return <CampoVazio className={className} />
-  return <span className={cn('tabular-nums', className)}>{texto}</span>
+  return (
+    <span className={cn('tabular-nums whitespace-nowrap', className)} title={texto}>
+      {texto}
+    </span>
+  )
 }
 
 export function TextoCampoExibicao({

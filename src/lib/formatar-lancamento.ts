@@ -532,7 +532,7 @@ export const FIELD_CELL_CLASS: Partial<Record<CampoCelula, string>> = {
   tipologia: 'min-w-0',
   unidade: 'min-w-0 tabular-nums text-center',
   andar: 'min-w-0 tabular-nums whitespace-nowrap',
-  metragem: 'min-w-0 max-w-full tabular-nums text-right overflow-hidden',
+  metragem: 'min-w-0 tabular-nums text-right',
   data_entrega: 'min-w-0 tabular-nums whitespace-nowrap',
   vagas: 'min-w-0 tabular-nums text-center',
   valor_minimo: 'min-w-0 text-right tabular-nums whitespace-nowrap',

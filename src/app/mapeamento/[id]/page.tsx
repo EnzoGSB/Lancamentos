@@ -695,7 +695,7 @@ export default function MapeamentoPage() {
       >
         {isMetragem ? (
           <div className={cn(
-            'flex min-w-0 items-center overflow-hidden',
+            'flex min-w-0 items-center',
             isFaixaMetragem ? '' : 'justify-end gap-0.5'
           )}>
             <input

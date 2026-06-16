@@ -463,7 +463,7 @@ export default function ImoveisPage() {
                   <LancamentoMobileCard key={l.id} lancamento={l} fontSizePx={fontSizePx} />
                 ))}
               </div>
-              <div className="hidden md:block p-1">
+              <div className="hidden md:block p-1 overflow-x-auto">
                 <LancamentosTable lancamentos={lancamentos} showPdf fontSizePx={fontSizePx} />
               </div>
             </>
