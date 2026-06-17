@@ -36,6 +36,7 @@ function ordenarConstrutoras(a: string, b: string): number {
 }
 
 const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  aguardando_preparacao:  { label: 'Preparar PDF',          variant: 'outline' },
   pendente:               { label: 'Pendente',              variant: 'secondary' },
   extraindo:              { label: 'Extraindo',             variant: 'outline' },
   analisando:             { label: 'Analisando (IA)',       variant: 'outline' },
@@ -106,6 +107,14 @@ function ProcessamentoRow({
             Ver dados
           </Link>
         )}
+        {p.status === 'aguardando_preparacao' && (
+          <Link
+            href={`/processamentos/${p.id}/preparar`}
+            className="text-sm px-4 py-1.5 bg-amber-500 text-white rounded hover:bg-amber-600"
+          >
+            Preparar
+          </Link>
+        )}
         {p.status === 'pendente' && (
           <span className="text-sm px-4 py-1.5 bg-gray-100 text-gray-600 rounded">
             {naFila ? 'Na fila' : 'Iniciando…'}
@@ -130,8 +139,9 @@ function ProcessamentoRow({
 function resumoStatus(items: ProcessamentoComContagem[]) {
   const concluidos = items.filter(p => p.status === 'concluido').length
   const revisao = items.filter(p => p.status === 'aguardando_confirmacao').length
+  const preparacao = items.filter(p => p.status === 'aguardando_preparacao').length
   const pendentes = items.filter(p => p.status === 'pendente').length
-  return { concluidos, revisao, pendentes }
+  return { concluidos, revisao, preparacao, pendentes }
 }
 
 function ConstrutoraBloco({
@@ -152,7 +162,7 @@ function ConstrutoraBloco({
   idsNaFila?: Set<string>
 }) {
   const naoIdentificada = construtora === CONSTRUTORA_NAO_IDENTIFICADA
-  const { concluidos, revisao, pendentes } = resumoStatus(items)
+  const { concluidos, revisao, preparacao, pendentes } = resumoStatus(items)
 
   return (
     <div
@@ -202,6 +212,7 @@ function ConstrutoraBloco({
             <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs sm:text-sm text-gray-500">
               {concluidos > 0 && <span className="text-green-600 font-medium">{concluidos} concluído{concluidos !== 1 ? 's' : ''}</span>}
               {revisao > 0 && <span className="text-blue-600 font-medium">{revisao} em revisão</span>}
+              {preparacao > 0 && <span className="text-amber-600 font-medium">{preparacao} a preparar</span>}
               {pendentes > 0 && <span>{pendentes} pendente{pendentes !== 1 ? 's' : ''}</span>}
             </div>
           )}

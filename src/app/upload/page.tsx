@@ -6,7 +6,6 @@ import { X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { EVENTO_FILA_ATUALIZADA, tentarProcessarProximo } from '@/lib/processamento-fila-worker'
 
 const MAX_ARQUIVOS = 20
 const MAX_MB = 50
@@ -98,14 +97,16 @@ export default function UploadPage() {
     } else {
       toast.success(
         sucessos.length === 1
-          ? 'PDF enviado — entrará na fila de processamento'
-          : `${sucessos.length} PDFs enviados — fila no Dashboard`
+          ? 'PDF enviado — selecione as páginas a remover'
+          : `${sucessos.length} PDFs enviados — prepare cada um no Dashboard`
       )
     }
 
-    window.dispatchEvent(new CustomEvent(EVENTO_FILA_ATUALIZADA))
-    void fetch('/api/processamentos/iniciar-proximo', { method: 'POST' })
-    void tentarProcessarProximo()
+    if (sucessos.length === 1) {
+      router.push(`/processamentos/${sucessos[0].id}/preparar`)
+      return
+    }
+
     router.push('/dashboard')
   }, [files, router])
 
@@ -133,9 +134,10 @@ export default function UploadPage() {
     <div className="w-full max-w-xl mx-auto">
       <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">Upload de Tabelão</h1>
       <p className="text-sm sm:text-base text-gray-500 mb-5 sm:mb-6">
-        Envie um ou vários PDFs. Cada arquivo entra na <strong className="font-medium text-gray-700">fila global</strong>:
-        um PDF é processado por vez; os demais aguardam automaticamente no Dashboard.
-        PDFs com <strong className="font-medium text-gray-700">menos páginas</strong> têm prioridade na fila.
+        Envie um ou vários PDFs. Antes do processamento, você poderá{' '}
+        <strong className="font-medium text-gray-700">remover páginas</strong> desnecessárias
+        (capas, anexos etc.). Depois o arquivo entra na{' '}
+        <strong className="font-medium text-gray-700">fila global</strong> — um PDF por vez.
       </p>
 
       <Card className="mb-6">
