@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Search, X } from 'lucide-react'
+import { ChevronDown, Search, Trash2, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import type { Lancamento } from '@/lib/types'
 import { LancamentoMobileCard } from '@/components/lancamento-mobile-card'
 import { LancamentosTable } from '@/components/lancamentos-table'
@@ -240,6 +242,9 @@ export default function ImoveisPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [fontSizePx, setFontSizePx] = useState(FONT_SIZE_DEFAULT)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     setFontSizePx(loadFontSize())
@@ -297,6 +302,64 @@ export default function ImoveisPage() {
   useEffect(() => {
     fetchLancamentos()
   }, [fetchLancamentos])
+
+  useEffect(() => {
+    setSelectedIds(prev => {
+      const visiveis = new Set(lancamentos.map(l => l.id))
+      const next = new Set([...prev].filter(id => visiveis.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [lancamentos])
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const toggleSelectAll = useCallback((checked: boolean) => {
+    if (!checked) {
+      setSelectedIds(new Set())
+      return
+    }
+    setSelectedIds(new Set(lancamentos.map(l => l.id)))
+  }, [lancamentos])
+
+  const handleDeleteSelected = useCallback(async () => {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/lancamentos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao apagar')
+
+      const removidos = data.removidos ?? ids.length
+      setLancamentos(prev => prev.filter(l => !selectedIds.has(l.id)))
+      setTotal(prev => Math.max(0, prev - removidos))
+      setSelectedIds(new Set())
+      setDeleteOpen(false)
+      toast.success(
+        removidos === 1
+          ? '1 imóvel removido do banco.'
+          : `${removidos} imóveis removidos do banco.`
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao apagar imóveis')
+    } finally {
+      setDeleting(false)
+    }
+  }, [selectedIds])
+
+  const qtdSelecionados = selectedIds.size
 
   const empreendimentosFiltrados = useMemo(() => {
     if (filtros.construtora.length === 0) return opcoes.empreendimentos
@@ -443,11 +506,38 @@ export default function ImoveisPage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">
-            {loading
-              ? 'Carregando...'
-              : `${lancamentos.length} de ${total} imóve${total === 1 ? 'l' : 'is'} exibido${lancamentos.length === 1 ? '' : 's'}`}
-          </CardTitle>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <CardTitle className="text-lg">
+              {loading
+                ? 'Carregando...'
+                : `${lancamentos.length} de ${total} imóve${total === 1 ? 'l' : 'is'} exibido${lancamentos.length === 1 ? '' : 's'}`}
+            </CardTitle>
+            {qtdSelecionados > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-gray-600">
+                  {qtdSelecionados} selecionado{qtdSelecionados === 1 ? '' : 's'}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  Limpar seleção
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 className="size-3.5" />
+                  Apagar selecionados
+                </Button>
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {!loading && lancamentos.length === 0 ? (
@@ -460,16 +550,51 @@ export default function ImoveisPage() {
             <>
               <div className="md:hidden p-3 space-y-3">
                 {lancamentos.map(l => (
-                  <LancamentoMobileCard key={l.id} lancamento={l} fontSizePx={fontSizePx} />
+                  <LancamentoMobileCard
+                    key={l.id}
+                    lancamento={l}
+                    fontSizePx={fontSizePx}
+                    selectable
+                    selected={selectedIds.has(l.id)}
+                    onToggleSelect={toggleSelect}
+                  />
                 ))}
               </div>
               <div className="hidden md:block p-1 overflow-x-auto">
-                <LancamentosTable lancamentos={lancamentos} showPdf fontSizePx={fontSizePx} />
+                <LancamentosTable
+                  lancamentos={lancamentos}
+                  showPdf
+                  fontSizePx={fontSizePx}
+                  selectable
+                  selectedIds={selectedIds}
+                  onToggleSelect={toggleSelect}
+                  onToggleSelectAll={toggleSelectAll}
+                />
               </div>
             </>
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Apagar imóveis selecionados?"
+        description={
+          <>
+            <p>
+              {qtdSelecionados === 1
+                ? '1 imóvel será removido permanentemente do banco mestre.'
+                : `${qtdSelecionados} imóveis serão removidos permanentemente do banco mestre.`}
+            </p>
+            <p>Esta ação não pode ser desfeita.</p>
+          </>
+        }
+        confirmLabel="Apagar"
+        variant="destructive"
+        loading={deleting}
+        onConfirm={handleDeleteSelected}
+      />
     </div>
   )
 }

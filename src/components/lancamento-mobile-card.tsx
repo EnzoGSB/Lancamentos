@@ -14,15 +14,43 @@ type LancamentoMobileCardProps = {
   lancamento: Lancamento
   showPdf?: boolean
   fontSizePx?: number
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: (id: string) => void
 }
 
-export function LancamentoMobileCard({ lancamento: l, showPdf = true, fontSizePx }: LancamentoMobileCardProps) {
+export function LancamentoMobileCard({
+  lancamento: l,
+  showPdf = true,
+  fontSizePx,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+}: LancamentoMobileCardProps) {
   const labelStyle = fontSizePx != null ? { fontSize: fontSizePx * 0.85 } : undefined
   const bodyStyle = fontSizePx != null ? { fontSize: fontSizePx } : undefined
   const labelClass = cn('text-gray-400', fontSizePx == null && 'text-xs')
 
   return (
-    <div className={cn('rounded-xl border bg-white p-4 space-y-3', fontSizePx == null && 'text-sm')} style={bodyStyle}>
+    <div
+      className={cn(
+        'rounded-xl border bg-white p-4 space-y-3',
+        fontSizePx == null && 'text-sm',
+        selectable && selected && 'border-blue-300 bg-blue-50/40'
+      )}
+      style={bodyStyle}
+    >
+      {selectable && (
+        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect?.(l.id)}
+            className="size-4 rounded border-gray-300 accent-gray-900"
+          />
+          Selecionar
+        </label>
+      )}
       <div>
         <p className="font-semibold text-gray-900 leading-snug">{l.empreendimento}</p>
         <p className={cn('text-gray-500 mt-0.5', fontSizePx == null && 'text-sm')} style={labelStyle}>

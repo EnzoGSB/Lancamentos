@@ -103,3 +103,26 @@ export async function GET(request: NextRequest) {
     offset,
   })
 }
+
+export async function DELETE(request: NextRequest) {
+  const body = await request.json().catch(() => ({}))
+  const ids = (body.ids as string[] | undefined)?.filter(Boolean) ?? []
+
+  if (ids.length === 0) {
+    return NextResponse.json({ error: 'Informe ao menos um id para apagar.' }, { status: 400 })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('lancamentos')
+    .delete()
+    .in('id', ids)
+    .select('id')
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({
+    ok: true,
+    removidos: data?.length ?? 0,
+    ids: data?.map(r => r.id) ?? [],
+  })
+}
