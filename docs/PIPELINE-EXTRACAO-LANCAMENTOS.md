@@ -165,6 +165,8 @@ Danti revelou: prompt enviesado para o Cyrela trazia 29 de ~50 linhas).
 **SINGLE** (`SYSTEM_PROMPT_SINGLE`):
 - Uma linha por tipologia; inclui suítes (2/3/4 suítes).
 - **IGNORA KITs** (Kit Conforto/Automação/Acabamento) — não são imóveis.
+- **Preços (v1.6)**: `valor_maximo` = maior valor (De/tabela/cheio ou maior andar);
+  `valor_minimo` = com desconto (Por/promoção) ou menor andar. Desconto **nunca** no máximo.
 - Valores por andar → agrupa em `valor_minimo`/`valor_maximo`.
 - Tabelas de pagamento → resumo em `mais_detalhes`.
 
@@ -184,13 +186,15 @@ Danti revelou: prompt enviesado para o Cyrela trazia 29 de ~50 linhas).
 - Usa a **MARCA** da incorporadora (Lindenberg, Cyrela…), nunca a razão social do rodapé.
 - Nome do arquivo é indício secundário. Se incerto → `"A identificar"`.
 
-**Pós-processamento** (`deduplicar`) — **consolida, não descarta** (v1.1):
+**Pós-processamento** (`deduplicar` + `normalizarLancamento`) — **consolida, não descarta** (v1.1):
 - Chave normalizada: empreendimento e tipologia em minúsculo/sem acentos/sem
   pontuação; metragem reduzida aos números (ex.: "Garden 167m²" e "167m²" → `167`).
   Isso remove duplicatas de overlap mesmo com leituras ligeiramente diferentes.
 - Ao colapsar a mesma chave: **mescla** — `valor_minimo` = menor, `valor_maximo` =
   maior, e preenche campos vazios a partir da outra entrada (preserva a faixa de
   valores quando há várias unidades da mesma tipologia, ex.: Danti).
+- **`corrigirValoresMinMax` (v1.6)**: se `valor_minimo > valor_maximo` (IA inverteu
+  De/Por), troca os dois — desconto fica no mínimo, tabela no máximo.
 - **`completarColunasPorBloco` (v1.3)**: agrupa linhas do mesmo bloco (endereço/empreendimento)
   e propaga campos de colunas mescladas (endereço, status/entrega) e colunas com
   valor único no bloco (tipologia, preço quando iguais). Não inventa unidade/metragem

@@ -499,6 +499,14 @@ function valorNumericoPositivo(v: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
+/** Garante min ≤ max: mínimo = com desconto/menor; máximo = tabela/maior. */
+export function corrigirValoresMinMax(l: LancamentoAI): LancamentoAI {
+  const min = valorNumericoPositivo(l.valor_minimo)
+  const max = valorNumericoPositivo(l.valor_maximo)
+  if (min == null || max == null || min <= max) return l
+  return { ...l, valor_minimo: max, valor_maximo: min }
+}
+
 function lancamentoTemPreco(l: LancamentoAI): boolean {
   return valorNumericoPositivo(l.valor_minimo) != null || valorNumericoPositivo(l.valor_maximo) != null
 }
@@ -547,7 +555,7 @@ export function normalizarLancamento(
   l: LancamentoAI,
   textoNativo = ''
 ): LancamentoAI {
-  return {
+  return corrigirValoresMinMax({
     ...l,
     tipologia: resolverTipologia(l.tipologia, textoNativo),
     andar: formatarAndar(l.andar),
@@ -559,7 +567,7 @@ export function normalizarLancamento(
     empreendimento: formatarTextoCampo(l.empreendimento) ?? l.empreendimento,
     construtora: formatarTextoCampo(l.construtora) ?? l.construtora,
     bairro: formatarTextoCampo(l.bairro),
-  }
+  })
 }
 
 export function normalizarLancamentos(

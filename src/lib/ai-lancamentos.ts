@@ -58,11 +58,18 @@ const LANCAMENTO_SCHEMA = `{
   "unidade": "ex: 72-T2, 112, 241, Ap. 501 ou null — APENAS código/número do apartamento, SEM Duplex/Garden/Penthouse (isso vai em tipologia)",
   "andar": "ex: 3º andar, 12º andar, Térreo, Cobertura, 1º-26º — use sempre 'Nº andar' (não só 'Nº')",
   "vagas": "ex: 0, 0-1, 2, 4 ou null",
-  "valor_minimo": número sem R$ sem pontos de milhar (ex: 503146) ou null,
-  "valor_maximo": número ou null (null se igual ao mínimo),
+  "valor_minimo": menor valor a pagar — preço COM desconto (Por/promoção) ou menor preço por andar; número sem R$ (ex: 503146) ou null,
+  "valor_maximo": maior valor a pagar — preço DE tabela/cheio ou maior preço por andar; null se igual ao mínimo,
   "desconto_margem": "ex: 10%, 3% a 22% ou null",
   "mais_detalhes": objeto JSON livre com informações extras ou null
 }`
+
+const REGRA_VALOR_MIN_MAX = `PREÇOS (valor_minimo / valor_maximo):
+- valor_maximo = MAIOR valor que se paga no imóvel (coluna De / valor tabela / preço cheio).
+- valor_minimo = valor COM DESCONTO (coluna Por / promoção / à vista) ou o MENOR preço quando a linha agrega vários andares.
+- PDF com De e Por: copie como está — Por → valor_minimo, De → valor_maximo. NUNCA inverta; desconto SEMPRE no mínimo, nunca no máximo.
+- Preço único sem desconto: preencha valor_minimo; valor_maximo = null.
+- Faixa por andar (mesma tipologia): valor_minimo = menor PREÇO DE VENDA, valor_maximo = maior.`
 
 const REGRA_TIPOLOGIA_UNIDADE = `TIPOLOGIA vs UNIDADE: Duplex, Garden, Penthouse, Cobertura, Triplex são modificadores de TIPOLOGIA (ex: "3 suítes Duplex") — NUNCA em unidade. Unidade = apenas número/código do apartamento (ex: "241", "1009", "72-T2" — não "241 Duplex").`
 
@@ -73,7 +80,8 @@ const REGRA_CONSISTENCIA_COLUNAS = `CONSISTÊNCIA DE COLUNAS NO BLOCO TABULAR:
 - Nunca deixe unidade, metragem, tipologia ou preço preenchidos em algumas linhas do bloco e vazios em outras quando a coluna está presente. Leia linha a linha, coluna a coluna.
 - Célula vazia ou traço "—" no PDF → null no JSON. Isso é raro; não omita a linha inteira.
 - Células mescladas verticalmente (ENDEREÇO, STATUS, ENTREGA): o valor vale para TODAS as linhas do bloco — repita em cada linha JSON.
-- Mapeamento comum: UNIDADES/Unidade/Apto/Ap. → unidade (número do apto); METRAGEM/Área/m² privativa → metragem; TIPO/TIPOLOGIA → tipologia; POR/Preço/Valor de venda → valor_minimo; DE/Valor tabela → valor_maximo quando houver desconto; STATUS/Entrega → data_entrega; ENDEREÇO → endereco.
+- Mapeamento comum: UNIDADES/Unidade/Apto/Ap. → unidade; METRAGEM/Área/m² → metragem; TIPO/TIPOLOGIA → tipologia; Por/Preço promocional → valor_minimo; De/Valor tabela → valor_maximo; STATUS/Entrega → data_entrega; ENDEREÇO → endereco.
+- ${REGRA_VALOR_MIN_MAX}
 - Tabela com coluna de apartamentos individuais (404, 406, 501…): UMA linha JSON por linha da tabela — NÃO agregue por tipologia. Preencha unidade em todas as linhas.`
 
 const REGRA_SOMENTE_TABELAS = `SOMENTE BLOCOS TABULARES — ignore plantas e mapas coloridos:
@@ -105,8 +113,8 @@ Regras críticas:
 2. NÃO ignore tipologias com suítes — "2 SUÍTES", "3 SUÍTES" são tão válidas quanto "2 dorms"
 3. IGNORE completamente: KIT CONFORTO, KIT AUTOMAÇÃO, KIT DE ACABAMENTO, KIT BÁSICO e qualquer "kit" — são pacotes adicionais, NÃO são imóveis
 4. Páginas com tabelas UNIDADES + PREÇO DE VENDA por andar (mesmo com colunas ATO/MENSAIS/FINANCIAMENTO) contêm dados de imóvel — extraia TODAS as tipologias de TODAS as páginas, inclusive páginas 9 em diante.
-5. Para tabelas com valores por andar (ex: "1º andar R$856.781 ... 26º andar R$985.299"), agrupe por variante: valor_minimo=menor PREÇO DE VENDA, valor_maximo=maior, andar=faixa "1º-26º"
-6. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 503146). SEMPRE preencha quando o PDF informar — colunas comuns: "Valor Total", "Preço", "Preço de Venda", "R$".
+5. ${REGRA_VALOR_MIN_MAX}
+6. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 503146). SEMPRE preencha quando o PDF informar — colunas comuns: "Valor Total", "Preço", "Preço de Venda", "De", "Por", "R$".
 7. Tabelas largas (ex: Lindenberg): tipologia/metragem à esquerda e preço à direita. Se esta faixa mostrar a linha mas não a coluna de preço, busque o valor no TEXTO NATIVO para a mesma tipologia + metragem + unidade/andar.
 8. CAMPO unidade: colunas Unidade/Apto/Ap./Apartamento — só o número/código (241, 1009). Coluna UNIDADES com "1º andar" → use andar, não unidade.
 9. ${REGRA_TIPOLOGIA_UNIDADE}
@@ -131,7 +139,7 @@ Regras CRÍTICAS:
 1. Extraia TODOS os blocos tabulares válidos visíveis nesta faixa — NÃO pare no primeiro. NÃO extraia de plantas ou mapas coloridos. Tabela com coluna UNIDADES/Apto: UMA linha JSON por linha — preencha unidade, metragem, tipologia e preço em TODAS as linhas do bloco.
 2. Tabelas com coluna UNIDADES (andares 1º–26º), ÁREA PRIVATIVA, PREÇO DE VENDA e colunas de pagamento (ATO, MENSAIS, FINANCIAMENTO) são tabelas de PREÇO DE UNIDADES — NÃO descarte por parecer "só pagamento". O PREÇO DE VENDA de cada andar é o valor do imóvel.
 3. Variantes distintas (ex: "2 DORM - FINAL 1" vs "2 DORM - FINAL 2", metragens diferentes) = LINHAS SEPARADAS. Inclua o sufixo completo na tipologia (ex: "2 dorms FINAL 2").
-4. Bloco com preços por andar: UMA linha por variante — valor_minimo = menor PREÇO DE VENDA da coluna, valor_maximo = maior, andar = faixa "1º-26º" (ou intervalo visível), metragem da coluna ÁREA PRIVATIVA, vagas da coluna VAGAS.
+4. ${REGRA_VALOR_MIN_MAX} Bloco com preços por andar: UMA linha por variante — andar = faixa "1º-26º", metragem da coluna ÁREA PRIVATIVA, vagas da coluna VAGAS.
 5. IGNORE KIT CONFORTO, KIT AUTOMAÇÃO, KIT DE ACABAMENTO e qualquer "kit" — não são imóveis.
 6. CAMPO unidade: só número/código do apto (241, 1009, 72-T2). Coluna UNIDADES com "1º andar" → use andar.
 7. ${REGRA_TIPOLOGIA_UNIDADE}
@@ -165,7 +173,7 @@ Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
 8. Se esta FAIXA cortou o cabeçalho de região/empreendimento, descubra o bairro pelo NOME DO EMPREENDIMENTO, pelo ENDEREÇO da linha ou pelo TEXTO NATIVO — NUNCA repita cegamente o bairro da célula mesclada acima se o empreendimento indicar outro bairro.
 9. SEMPRE preencha empreendimento, bairro e data_entrega quando a informação existir.
 10. NÃO use o nome da construtora como substituto para empreendimento.
-11. valor_minimo e valor_maximo são números puros sem R$, sem pontos de milhar (ex: 1625000). SEMPRE preencha quando a linha tiver preço — colunas "Valor Total", "Preço", "Preço de Venda", "R$".
+11. ${REGRA_VALOR_MIN_MAX} Números puros sem R$, sem pontos de milhar (ex: 1625000). SEMPRE preencha quando a linha tiver preço.
 12. Tabelas largas: se a faixa mostrar tipologia/metragem mas a coluna de preço estiver cortada, use o TEXTO NATIVO para preencher valor_minimo/valor_maximo daquela linha.
 13. IGNORE cabeçalhos de coluna, rodapés, notas e texto explicativo — apenas linhas de dados de imóveis.
 14. Linha visível sem preço na imagem: busque no texto nativo. Se não existir em lugar nenhum, inclua a linha com valor_minimo null — não omita.

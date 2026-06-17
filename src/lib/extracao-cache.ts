@@ -3,7 +3,7 @@ import type { AnaliseIA, LancamentoAI } from './types'
 
 /** Incremente ao mudar regras de extração/pós-processamento que invalidem cache antigo. */
 export const EXTRACAO_CACHE_VERSION =
-  process.env.EXTRACTION_CACHE_VERSION?.trim() || '2'
+  process.env.EXTRACTION_CACHE_VERSION?.trim() || '3'
 
 export type ExtracaoCacheHit = {
   tipo: 'single' | 'multi'
