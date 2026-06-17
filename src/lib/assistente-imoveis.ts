@@ -7,6 +7,7 @@ import {
   mesclarFiltrosEntrega,
 } from './entrega-query'
 import {
+  ajustarContagensExatas,
   corrigirTermosBusca,
   extrairHeuristicaComercial,
 } from './busca-texto'
@@ -71,14 +72,19 @@ function limparCondicao(raw: unknown): CondicaoAlternativa | null {
 
   const cond: CondicaoAlternativa = {}
   const suites = num(o.suites_min ?? o.suites)
+  const suitesMax = num(o.suites_max)
   const dorms = num(o.dormitorios_min ?? o.dormitorios)
+  const dormsMax = num(o.dormitorios_max)
   if (suites != null) cond.suites_min = suites
+  if (suitesMax != null) cond.suites_max = suitesMax
   if (dorms != null) cond.dormitorios_min = dorms
+  if (dormsMax != null) cond.dormitorios_max = dormsMax
   if (o.exige_duplex === true) cond.exige_duplex = true
   const tips = arr(o.tipologia_contem)
   if (tips) cond.tipologia_contem = tips
 
-  if (!cond.suites_min && !cond.dormitorios_min && !cond.exige_duplex && !cond.tipologia_contem?.length) {
+  if (!cond.suites_min && !cond.suites_max && !cond.dormitorios_min && !cond.dormitorios_max
+    && !cond.exige_duplex && !cond.tipologia_contem?.length) {
     return null
   }
   return cond
@@ -132,10 +138,14 @@ function limparFiltros(raw: Record<string, unknown>): FiltrosInterpretados {
   if (metMax != null) filtros.metragem_max = metMax
 
   const dorms = num(raw.dormitorios_min)
+  const dormsMax = num(raw.dormitorios_max)
   const suites = num(raw.suites_min)
+  const suitesMax = num(raw.suites_max)
   const vagas = num(raw.vagas_min)
   if (dorms != null && dorms > 0) filtros.dormitorios_min = dorms
+  if (dormsMax != null && dormsMax > 0) filtros.dormitorios_max = dormsMax
   if (suites != null && suites > 0) filtros.suites_min = suites
+  if (suitesMax != null && suitesMax > 0) filtros.suites_max = suitesMax
   if (vagas != null && vagas > 0) filtros.vagas_min = vagas
 
   if (Array.isArray(raw.condicoes_or)) {
@@ -145,7 +155,9 @@ function limparFiltros(raw: Record<string, unknown>): FiltrosInterpretados {
     if (condicoes.length) {
       filtros.condicoes_or = condicoes
       delete filtros.suites_min
+      delete filtros.suites_max
       delete filtros.dormitorios_min
+      delete filtros.dormitorios_max
     }
   }
 
@@ -174,7 +186,9 @@ function aplicarHeuristicas(message: string, filtros: FiltrosInterpretados): Fil
     if (comercial.limparTipoImovel) {
       delete next.tipo_imovel
       delete next.dormitorios_min
+      delete next.dormitorios_max
       delete next.suites_min
+      delete next.suites_max
     }
     if (comercial.termos?.length) {
       next.termos = [...new Set([...(next.termos ?? []), ...comercial.termos])]
@@ -227,7 +241,7 @@ function aplicarHeuristicas(message: string, filtros: FiltrosInterpretados): Fil
     }
   }
 
-  return next
+  return ajustarContagensExatas(message, next)
 }
 
 function resumirOpcoes(opcoes: OpcoesCatalogo) {
@@ -272,23 +286,27 @@ A busca não deve ser excessivamente rígida, mas também não traga imóveis se
 - "unidade" ou "imóvel" genérico **sem** especificar apartamento/studio/laje → não use tipo_imovel.
 
 ## Dormitórios, suítes e tipologia com OR
+### Exato vs mínimo
+- "3 quartos", "3 dormitórios", "2 suítes" **sem** "no mínimo"/"a partir de"/"pelo menos" → contagem **exata**: use dormitorios_min **e** dormitorios_max com o mesmo valor (idem suites_min/suites_max).
+- "a partir de 3 quartos", "pelo menos 2 suítes", "no mínimo 3 dormitórios" → só o campo _min (sem _max).
+
 Quando o usuário usar "ou" entre alternativas, use condicoes_or (cada item é uma condição alternativa — o imóvel precisa atender UMA delas):
 
 Exemplo: "3 suítes ou duplex com 2 suítes"
 → condicoes_or: [
-  { "suites_min": 3 },
-  { "suites_min": 2, "exige_duplex": true }
+  { "suites_min": 3, "suites_max": 3 },
+  { "suites_min": 2, "suites_max": 2, "exige_duplex": true }
 ]
 
-Quando critérios forem obrigatórios juntos (sem "ou"), use os campos diretos (suites_min, dormitorios_min, vagas_min, etc.).
+Quando critérios forem obrigatórios juntos (sem "ou"), use os campos diretos (suites_min/suites_max, dormitorios_min/dormitorios_max, vagas_min, etc.).
 
 ## Termos equivalentes
 - m², metros, metros quadrados, metragem, m → metragem
 - apê, apartamento, aparta → tipo_imovel: "apartamento" (2+ quartos)
 - studio → tipo_imovel: "studio"
 - unidade, imóvel → busca genérica (sem tipo_imovel, salvo contexto)
-- suíte, suites, suítes → suites
-- dorm, dormitório, quarto, quartos → dormitorios_min
+- suíte, suites, suítes → suites_min / suites_max (exato por padrão)
+- dorm, dormitório, quarto, quartos → dormitorios_min / dormitorios_max (exato por padrão)
 - vaga, vagas, garagem → vagas_min
 - duplex → termos: ["duplex"] ou exige_duplex: true
 - laje, laje corporativa, laje comercial, sala comercial → termos: ["laje"] (aceita também "Laje Comercial" no catálogo; corrige "coorporativa")
@@ -344,7 +362,9 @@ Campo "resposta": 1-2 frases em português explicando o que foi buscado. Se apli
     "metragem_min": null,
     "metragem_max": null,
     "dormitorios_min": null,
+    "dormitorios_max": null,
     "suites_min": null,
+    "suites_max": null,
     "vagas_min": null,
     "tipo_imovel": null,
     "entrega_pronta": null,

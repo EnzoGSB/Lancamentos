@@ -20,7 +20,9 @@ export { isEntregaPronta, isImovelPronto } from './entrega-query'
 
 export type CondicaoAlternativa = {
   suites_min?: number | null
+  suites_max?: number | null
   dormitorios_min?: number | null
+  dormitorios_max?: number | null
   exige_duplex?: boolean
   tipologia_contem?: string[]
 }
@@ -40,7 +42,9 @@ export type FiltrosLancamentos = {
   metragem_min?: number | null
   metragem_max?: number | null
   dormitorios_min?: number | null
+  dormitorios_max?: number | null
   suites_min?: number | null
+  suites_max?: number | null
   vagas_min?: number | null
   condicoes_or?: CondicaoAlternativa[]
   tipo_imovel?: 'apartamento' | 'studio' | null
@@ -177,6 +181,16 @@ function matchesMetragem(
   return iMax >= fMin && iMin <= fMax
 }
 
+function matchesContagemNumerica(
+  valor: number | null,
+  min: number | null | undefined,
+  max: number | null | undefined
+): boolean {
+  if (min != null && min > 0 && (valor == null || valor < min)) return false
+  if (max != null && max > 0 && (valor == null || valor > max)) return false
+  return true
+}
+
 function matchesCondicaoOr(l: Lancamento, cond: CondicaoAlternativa): boolean {
   const tip = l.tipologia ?? ''
   let hasCriterion = false
@@ -186,16 +200,17 @@ function matchesCondicaoOr(l: Lancamento, cond: CondicaoAlternativa): boolean {
     if (!isDuplex(l)) return false
   }
 
-  if (cond.suites_min != null && cond.suites_min > 0) {
+  if ((cond.suites_min != null && cond.suites_min > 0) || (cond.suites_max != null && cond.suites_max > 0)) {
     hasCriterion = true
-    const s = extrairSuites(tip)
-    if (s == null || s < cond.suites_min) return false
+    if (!matchesContagemNumerica(extrairSuites(tip), cond.suites_min, cond.suites_max)) return false
   }
 
-  if (cond.dormitorios_min != null && cond.dormitorios_min > 0) {
+  if ((cond.dormitorios_min != null && cond.dormitorios_min > 0)
+    || (cond.dormitorios_max != null && cond.dormitorios_max > 0)) {
     hasCriterion = true
-    const d = extrairDormitorios(tip)
-    if (d == null || d < cond.dormitorios_min) return false
+    if (!matchesContagemNumerica(extrairDormitorios(tip), cond.dormitorios_min, cond.dormitorios_max)) {
+      return false
+    }
   }
 
   if (cond.tipologia_contem?.length) {
@@ -265,13 +280,21 @@ function filtrarPosQuery(
     if (filtros.condicoes_or?.length) {
       if (!filtros.condicoes_or.some(c => matchesCondicaoOr(l, c))) return false
     } else if (!buscaComercial) {
-      if (filtros.dormitorios_min != null && filtros.dormitorios_min > 0) {
-        const d = extrairDormitorios(l.tipologia)
-        if (d == null || d < filtros.dormitorios_min) return false
+      if ((filtros.dormitorios_min != null && filtros.dormitorios_min > 0)
+        || (filtros.dormitorios_max != null && filtros.dormitorios_max > 0)) {
+        if (!matchesContagemNumerica(
+          extrairDormitorios(l.tipologia),
+          filtros.dormitorios_min,
+          filtros.dormitorios_max
+        )) return false
       }
-      if (filtros.suites_min != null && filtros.suites_min > 0) {
-        const s = extrairSuites(l.tipologia)
-        if (s == null || s < filtros.suites_min) return false
+      if ((filtros.suites_min != null && filtros.suites_min > 0)
+        || (filtros.suites_max != null && filtros.suites_max > 0)) {
+        if (!matchesContagemNumerica(
+          extrairSuites(l.tipologia),
+          filtros.suites_min,
+          filtros.suites_max
+        )) return false
       }
     }
 
@@ -333,7 +356,9 @@ function precisaPosFiltro(filtros: FiltrosLancamentos): boolean {
   return (filtros.metragem_min ?? 0) > 0
     || filtros.metragem_max != null
     || (filtros.dormitorios_min ?? 0) > 0
+    || (filtros.dormitorios_max ?? 0) > 0
     || (filtros.suites_min ?? 0) > 0
+    || (filtros.suites_max ?? 0) > 0
     || (filtros.vagas_min ?? 0) > 0
     || (filtros.condicoes_or?.length ?? 0) > 0
     || (filtros.termos?.length ?? 0) > 0

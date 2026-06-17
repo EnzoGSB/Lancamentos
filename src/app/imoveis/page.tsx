@@ -52,6 +52,42 @@ const FILTROS_VAZIOS: Filtros = {
   valor_max: '',
 }
 
+const PAGE_SIZE = 30
+
+function PaginacaoImoveis({
+  pagina,
+  totalPaginas,
+  onPagina,
+}: {
+  pagina: number
+  totalPaginas: number
+  onPagina: (p: number) => void
+}) {
+  if (totalPaginas <= 1) return null
+
+  return (
+    <nav
+      className="flex flex-wrap items-center justify-center gap-1.5 p-4 border-t border-gray-100"
+      aria-label="Paginação de imóveis"
+    >
+      {Array.from({ length: totalPaginas }, (_, i) => i + 1).map(n => (
+        <Button
+          key={n}
+          type="button"
+          variant={n === pagina ? 'default' : 'outline'}
+          size="sm"
+          className="min-w-9 touch-manipulation"
+          onClick={() => onPagina(n)}
+          aria-current={n === pagina ? 'page' : undefined}
+          aria-label={`Página ${n}`}
+        >
+          {n}
+        </Button>
+      ))}
+    </nav>
+  )
+}
+
 function MultiSelectFiltro({
   label,
   values,
@@ -240,6 +276,7 @@ export default function ImoveisPage() {
   })
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([])
   const [total, setTotal] = useState(0)
+  const [pagina, setPagina] = useState(1)
   const [loading, setLoading] = useState(true)
   const [fontSizePx, setFontSizePx] = useState(FONT_SIZE_DEFAULT)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
@@ -271,10 +308,16 @@ export default function ImoveisPage() {
     return () => clearTimeout(t)
   }, [busca])
 
+  useEffect(() => {
+    setPagina(1)
+  }, [filtros])
+
   const fetchLancamentos = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
+      params.set('limit', String(PAGE_SIZE))
+      params.set('offset', String((pagina - 1) * PAGE_SIZE))
       if (filtros.q) params.set('q', filtros.q)
       filtros.construtora.forEach(v => params.append('construtora', v))
       filtros.empreendimento.forEach(v => params.append('empreendimento', v))
@@ -297,11 +340,16 @@ export default function ImoveisPage() {
     } finally {
       setLoading(false)
     }
-  }, [filtros])
+  }, [filtros, pagina])
 
   useEffect(() => {
     fetchLancamentos()
   }, [fetchLancamentos])
+
+  useEffect(() => {
+    const max = Math.max(1, Math.ceil(total / PAGE_SIZE))
+    if (pagina > max) setPagina(max)
+  }, [total, pagina])
 
   useEffect(() => {
     setSelectedIds(prev => {
@@ -360,6 +408,14 @@ export default function ImoveisPage() {
   }, [selectedIds])
 
   const qtdSelecionados = selectedIds.size
+
+  const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const inicioLista = total === 0 ? 0 : (pagina - 1) * PAGE_SIZE + 1
+  const fimLista = total === 0 ? 0 : Math.min(pagina * PAGE_SIZE, total)
+
+  const irParaPagina = useCallback((novaPagina: number) => {
+    setPagina(Math.min(Math.max(1, novaPagina), totalPaginas))
+  }, [totalPaginas])
 
   const empreendimentosFiltrados = useMemo(() => {
     if (filtros.construtora.length === 0) return opcoes.empreendimentos
@@ -510,7 +566,9 @@ export default function ImoveisPage() {
             <CardTitle className="text-lg">
               {loading
                 ? 'Carregando...'
-                : `${lancamentos.length} de ${total} imóve${total === 1 ? 'l' : 'is'} exibido${lancamentos.length === 1 ? '' : 's'}`}
+                : total === 0
+                  ? 'Nenhum imóvel'
+                  : `${inicioLista}–${fimLista} de ${total} imóve${total === 1 ? 'l' : 'is'} · página ${pagina} de ${totalPaginas}`}
             </CardTitle>
             {qtdSelecionados > 0 && (
               <div className="flex flex-wrap items-center gap-2">
@@ -571,6 +629,11 @@ export default function ImoveisPage() {
                   onToggleSelectAll={toggleSelectAll}
                 />
               </div>
+              <PaginacaoImoveis
+                pagina={pagina}
+                totalPaginas={totalPaginas}
+                onPagina={irParaPagina}
+              />
             </>
           )}
         </CardContent>

@@ -98,3 +98,77 @@ export function extrairHeuristicaComercial(message: string): {
     limparTipoImovel: true,
   }
 }
+
+const RE_MINIMO_ANTES = /\b(?:a\s+partir\s+de|no\s+minimo|pelo\s+menos|mais\s+de|acima\s+de|com\s+pelo\s+menos)\s*$/i
+
+function trechoPedeMinimo(textoAntes: string): boolean {
+  return RE_MINIMO_ANTES.test(textoAntes.slice(-50).trim())
+}
+
+function mencaoPedeMinimo(message: string, reContagem: RegExp): boolean {
+  const n = normalizarTextoBusca(message)
+  const re = new RegExp(reContagem.source, reContagem.flags.includes('g') ? reContagem.flags : `${reContagem.flags}g`)
+  let match: RegExpExecArray | null
+  while ((match = re.exec(n)) !== null) {
+    const antes = n.slice(Math.max(0, match.index - 50), match.index)
+    if (trechoPedeMinimo(antes)) return true
+  }
+  return false
+}
+
+const RE_CONTAGEM_DORM = /(\d+|um|uma|dois|duas|tres|quatro|cinco|seis)\s*(?:quartos?|dormitorios?|dorms?)/gi
+const RE_CONTAGEM_SUITE = /(\d+|um|uma|dois|duas|tres|quatro|cinco|seis)\s*suites?/gi
+
+/** Ajusta filtros para contagem exata quando o usuário não pediu mínimo ("3 quartos" → min e max iguais). */
+export function ajustarContagensExatas<T extends {
+  dormitorios_min?: number | null
+  dormitorios_max?: number | null
+  suites_min?: number | null
+  suites_max?: number | null
+  condicoes_or?: Array<{
+    dormitorios_min?: number | null
+    dormitorios_max?: number | null
+    suites_min?: number | null
+    suites_max?: number | null
+    exige_duplex?: boolean
+    tipologia_contem?: string[]
+  }>
+}>(message: string, filtros: T): T {
+  const next = { ...filtros }
+  const pedeMinDorm = mencaoPedeMinimo(message, RE_CONTAGEM_DORM)
+  const pedeMinSuite = mencaoPedeMinimo(message, RE_CONTAGEM_SUITE)
+
+  const fixContagem = (
+    min: number | null | undefined,
+    max: number | null | undefined,
+    pedeMinimo: boolean
+  ): { min?: number | null; max?: number | null } => {
+    if (min == null || min <= 0 || max != null || pedeMinimo) {
+      return { min, max }
+    }
+    return { min, max: min }
+  }
+
+  if (next.condicoes_or?.length) {
+    next.condicoes_or = next.condicoes_or.map(cond => {
+      const c = { ...cond }
+      const d = fixContagem(c.dormitorios_min, c.dormitorios_max, pedeMinDorm)
+      c.dormitorios_min = d.min
+      c.dormitorios_max = d.max
+      const s = fixContagem(c.suites_min, c.suites_max, pedeMinSuite)
+      c.suites_min = s.min
+      c.suites_max = s.max
+      return c
+    })
+    return next
+  }
+
+  const d = fixContagem(next.dormitorios_min, next.dormitorios_max, pedeMinDorm)
+  next.dormitorios_min = d.min
+  next.dormitorios_max = d.max
+  const s = fixContagem(next.suites_min, next.suites_max, pedeMinSuite)
+  next.suites_min = s.min
+  next.suites_max = s.max
+
+  return next
+}
