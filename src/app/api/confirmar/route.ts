@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import type { LancamentoAI } from '@/lib/types'
+import type { AnaliseIA, LancamentoAI } from '@/lib/types'
 import { normalizarLancamento } from '@/lib/formatar-lancamento'
+import { construtoraManualSeAplicavel } from '@/lib/construtora-processamento'
 
 function limparLancamento(raw: LancamentoAI, processamentoId: string) {
   const l = normalizarLancamento(raw)
@@ -48,9 +49,33 @@ export async function POST(request: NextRequest) {
 
     const resultado = { inseridos: inserted?.length ?? 0, erros: [] }
 
+    const { data: proc } = await supabaseAdmin
+      .from('processamentos_lancamentos')
+      .select('analise_ia')
+      .eq('id', processamentoId)
+      .single()
+
+    const analiseAtual = (proc?.analise_ia ?? {}) as AnaliseIA
+    const construtoraManual = construtoraManualSeAplicavel(
+      analiseAtual.construtora,
+      lancamentos as LancamentoAI[]
+    )
+
+    const patch: { status: string; resultado: typeof resultado; analise_ia?: AnaliseIA } = {
+      status: 'concluido',
+      resultado,
+    }
+
+    if (construtoraManual) {
+      patch.analise_ia = {
+        ...analiseAtual,
+        construtora: construtoraManual,
+      }
+    }
+
     await supabaseAdmin
       .from('processamentos_lancamentos')
-      .update({ status: 'concluido', resultado })
+      .update(patch)
       .eq('id', processamentoId)
 
     return NextResponse.json(resultado)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Trash2, Undo2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -25,6 +25,10 @@ import {
   calcularProgressoEstimado,
   sublabelProgressoEstimado,
 } from '@/lib/processamento-progresso-estimado'
+import {
+  construtoraEfetivaProcessamento,
+  construtoraManualSeAplicavel,
+} from '@/lib/construtora-processamento'
 
 const STATUS_EM_PROGRESSO = ['extraindo', 'analisando', 'processando']
 
@@ -191,6 +195,13 @@ export default function MapeamentoPage() {
   const multiEditUndoPushedRef = useRef(false)
   const processandoDesdeRef = useRef<number | null>(null)
   const statusAnteriorRef = useRef('')
+
+  const construtoraExibida = useMemo(() => {
+    const manual = construtoraManualSeAplicavel(analise?.construtora, lancamentos)
+    if (manual) return manual
+    const efetiva = construtoraEfetivaProcessamento(analise?.construtora, null)
+    return efetiva ?? 'A identificar'
+  }, [analise?.construtora, lancamentos])
 
   const snapshotLancamentos = (items: LancamentoAI[]) =>
     items.map(l => ({ ...l }))
@@ -811,7 +822,7 @@ export default function MapeamentoPage() {
               <Badge variant={analise.tipo === 'multi' ? 'secondary' : 'default'}>
                 {analise.tipo === 'multi' ? 'Multi-empreendimento' : 'Empreendimento único'}
               </Badge>
-              <span className="text-sm text-gray-500">{analise.construtora}</span>
+              <span className="text-sm text-gray-500">{construtoraExibida}</span>
               <span className="text-sm text-gray-400">•</span>
               <span className="text-sm text-gray-500">
                 {lancamentos.length} linhas extraídas

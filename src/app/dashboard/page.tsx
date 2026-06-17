@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConstrutoraDashboardEditor } from '@/components/construtora-dashboard-editor'
 import { FilaProcessamentoBanner } from '@/components/fila-processamento-banner'
 import {
   emProgresso,
@@ -16,17 +17,21 @@ import {
 } from '@/lib/fila-processamento'
 import { EVENTO_FILA_ATUALIZADA } from '@/lib/processamento-fila-worker'
 import type { AnaliseIA, ProcessamentoLancamento } from '@/lib/types'
+import { construtoraEfetivaProcessamento } from '@/lib/construtora-processamento'
 
 type ProcessamentoComContagem = ProcessamentoLancamento & {
   empreendimentos_inseridos?: number | null
+  construtora_efetiva?: string | null
 }
 
 const CONSTRUTORA_NAO_IDENTIFICADA = 'A identificar'
 
 function getConstrutora(p: ProcessamentoComContagem): string {
-  const analise = p.analise_ia as AnaliseIA | null
-  const nome = analise?.construtora?.trim()
-  return nome || CONSTRUTORA_NAO_IDENTIFICADA
+  const efetiva = construtoraEfetivaProcessamento(
+    (p.analise_ia as AnaliseIA | null)?.construtora,
+    p.construtora_efetiva
+  )
+  return efetiva || CONSTRUTORA_NAO_IDENTIFICADA
 }
 
 function ordenarConstrutoras(a: string, b: string): number {
@@ -51,16 +56,19 @@ function ProcessamentoRow({
   p,
   deletingId,
   onDelete,
+  onConstrutoraUpdated,
   compact = false,
   naFila = false,
 }: {
   p: ProcessamentoComContagem
   deletingId: string | null
   onDelete: (p: ProcessamentoComContagem) => void
+  onConstrutoraUpdated: (id: string, nome: string) => void
   compact?: boolean
   naFila?: boolean
 }) {
   const statusInfo = STATUS_LABELS[p.status] ?? { label: p.status, variant: 'secondary' as const }
+  const construtora = getConstrutora(p)
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 py-4">
@@ -68,12 +76,21 @@ function ProcessamentoRow({
         <p className="text-base font-medium text-gray-900 truncate">
           {p.original_filename || 'Arquivo sem nome'}
         </p>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {compact && p.tipo === 'multi' && 'Multi-empreendimento • '}
-          {compact && p.tipo === 'single' && 'Empreendimento único • '}
-          {compact && !p.tipo && 'Aguardando identificação • '}
-          {p.created_at && new Date(p.created_at).toLocaleString('pt-BR')}
-        </p>
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-gray-500 mt-0.5">
+          <ConstrutoraDashboardEditor
+            key={`${p.id}-${construtora}`}
+            processamentoId={p.id}
+            construtoraAtual={construtora}
+            onUpdated={nome => onConstrutoraUpdated(p.id, nome)}
+          />
+          <span className="text-gray-400">•</span>
+          {compact && p.tipo === 'multi' && <span>Multi-empreendimento •</span>}
+          {compact && p.tipo === 'single' && <span>Empreendimento único •</span>}
+          {compact && !p.tipo && construtora === CONSTRUTORA_NAO_IDENTIFICADA && (
+            <span>Aguardando identificação •</span>
+          )}
+          <span>{p.created_at && new Date(p.created_at).toLocaleString('pt-BR')}</span>
+        </div>
         {p.status === 'concluido' && p.resultado && (
           <div className="mt-1 space-y-0.5">
             {p.empreendimentos_inseridos != null && (
@@ -151,6 +168,7 @@ function ConstrutoraBloco({
   onToggle,
   deletingId,
   onDelete,
+  onConstrutoraUpdated,
   idsNaFila,
 }: {
   construtora: string
@@ -159,6 +177,7 @@ function ConstrutoraBloco({
   onToggle: () => void
   deletingId: string | null
   onDelete: (p: ProcessamentoComContagem) => void
+  onConstrutoraUpdated: (id: string, nome: string) => void
   idsNaFila?: Set<string>
 }) {
   const naoIdentificada = construtora === CONSTRUTORA_NAO_IDENTIFICADA
@@ -226,6 +245,7 @@ function ConstrutoraBloco({
               p={p}
               deletingId={deletingId}
               onDelete={onDelete}
+              onConstrutoraUpdated={onConstrutoraUpdated}
               compact
               naFila={idsNaFila?.has(p.id) ?? false}
             />
@@ -386,6 +406,25 @@ export default function DashboardPage() {
     }
   }, [deleteTarget, refreshCount])
 
+  const handleConstrutoraUpdated = useCallback((id: string, nome: string) => {
+    setProcessamentos(prev =>
+      prev.map(p => {
+        if (p.id !== id) return p
+        const analise = (p.analise_ia ?? {
+          tipo: 'multi',
+          construtora: '',
+          empreendimentos_identificados: [],
+          resumo: '',
+        }) as AnaliseIA
+        return {
+          ...p,
+          analise_ia: { ...analise, construtora: nome },
+          construtora_efetiva: nome,
+        }
+      })
+    )
+  }, [])
+
   return (
     <div className="w-full max-w-[1600px] mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-5 sm:mb-8">
@@ -499,6 +538,7 @@ export default function DashboardPage() {
                   onToggle={() => toggleRecolhida(construtora)}
                   deletingId={deletingId}
                   onDelete={setDeleteTarget}
+                  onConstrutoraUpdated={handleConstrutoraUpdated}
                   idsNaFila={idsNaFila}
                 />
               ))}
