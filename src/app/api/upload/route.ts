@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { hashPdfContent } from '@/lib/pdf-content-hash'
+import { contarPaginasPdf } from '@/lib/pdf-page-count'
 import { agendarAvancoFilaServidor } from '@/lib/processamento-fila-server'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -12,6 +13,7 @@ export async function POST(request: NextRequest) {
 
   const bytes = Buffer.from(await file.arrayBuffer())
   const contentHash = hashPdfContent(bytes)
+  const pageCount = await contarPaginasPdf(bytes)
 
   const { data: existente, error: dupError } = await supabaseAdmin
     .from('processamentos_lancamentos')
@@ -52,6 +54,7 @@ export async function POST(request: NextRequest) {
       storage_path: storagePath,
       original_filename: file.name,
       content_hash: contentHash,
+      page_count: pageCount,
       status: 'pendente',
     })
     .select()

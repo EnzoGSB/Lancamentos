@@ -67,6 +67,7 @@ export async function obterProximoPendenteId(): Promise<string | null> {
     .from('processamentos_lancamentos')
     .select('id')
     .eq('status', 'pendente')
+    .order('page_count', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle()

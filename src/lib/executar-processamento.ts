@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { analisarPDF, processarSingle, processarMulti } from '@/lib/ai-lancamentos'
 import { createPDFParser } from '@/lib/pdf-parse-server'
+import { contarPaginasPdf } from '@/lib/pdf-page-count'
 import { STATUS_SLOT_OCUPADO } from '@/lib/fila-processamento'
 import {
   ProcessamentoCanceladoError,
@@ -104,6 +105,14 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
     const arrayBuffer = await fileData.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
+    if (proc.page_count == null) {
+      const pageCount = await contarPaginasPdf(buffer)
+      await supabaseAdmin
+        .from('processamentos_lancamentos')
+        .update(patchStatus({ page_count: pageCount }))
+        .eq('id', processamentoId)
+    }
+
     const parser = createPDFParser(buffer)
     const textResult = await parser.getText()
     const extractedText: string = textResult.text
@@ -119,7 +128,7 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
       .update(patchStatus({ status: 'analisando' }))
       .eq('id', processamentoId)
 
-    const analise = await analisarPDF(extractedText, proc.original_filename || '')
+    const analise = await analisarPDF(extractedText, proc.original_filename || '', buffer)
 
     await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
 

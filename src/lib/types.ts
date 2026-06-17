@@ -32,6 +32,7 @@ export type ProcessamentoLancamento = {
   storage_path: string
   original_filename: string | null
   content_hash: string | null
+  page_count: number | null
   status: 'pendente' | 'extraindo' | 'analisando' | 'processando' | 'aguardando_confirmacao' | 'salvando' | 'concluido' | 'erro'
   tipo: 'single' | 'multi' | null
   analise_ia: Json | null

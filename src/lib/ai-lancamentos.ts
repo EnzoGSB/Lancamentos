@@ -1,4 +1,5 @@
 import sharp from 'sharp'
+import type OpenAI from 'openai'
 import { openai, AI_MODEL_ANALYZER, AI_MODEL_EXTRACTOR } from './openai'
 import { createPDFParser } from './pdf-parse-server'
 import type { AnaliseIA, LancamentoAI } from './types'
@@ -175,19 +176,16 @@ Regras CRÍTICAS (genéricas — valem para qualquer formato de tabelão):
 Responda APENAS com JSON válido, sem markdown:
 {"lancamentos": [...]}`
 
-export async function analisarPDF(texto: string, filename = ''): Promise<AnaliseIA> {
-  const completion = await openai.chat.completions.create({
-    model: AI_MODEL_ANALYZER,
-    messages: [
-      {
-        role: 'system',
-        content: `Você analisa textos extraídos de PDFs de tabelas de vendas imobiliárias brasileiras.
+const SYSTEM_PROMPT_ANALISADOR = `Você analisa PDFs de tabelas de vendas imobiliárias brasileiras.
 Classifique o documento e identifique os empreendimentos presentes.
+
+Você recebe a IMAGEM da primeira página (logos, cabeçalho, título) e o TEXTO NATIVO extraído do PDF.
+Priorize a imagem para identificar marcas visuais no topo/rodapé.
 
 Responda APENAS com JSON válido, sem markdown:
 {
   "tipo": "single" ou "multi",
-  "construtora": "nome da construtora principal",
+  "construtora": "nome da construtora/incorporadora/canal principal",
   "empreendimentos_identificados": ["lista", "de", "nomes"],
   "resumo": "uma frase descrevendo o documento"
 }
@@ -195,15 +193,43 @@ Responda APENAS com JSON válido, sem markdown:
 - "single": PDF dedicado a UM empreendimento (pode ter múltiplas tipologias e tabelas de pagamento detalhadas)
 - "multi": PDF com VÁRIOS empreendimentos listados em tabela (tabelão de construtora ou parceira)
 
-REGRA PARA construtora:
-- Use a MARCA da construtora/incorporadora (ex: Lindenberg, Cyrela, Tibério, Vitaurbana), NUNCA a razão social do rodapé (ex: "Ilha Bella Incorporadora Ltda.").
-- O NOME DO ARQUIVO costuma conter a construtora — use-o como forte indício.
-- Se não conseguir identificar com confiança, infira do nome do arquivo.`,
-      },
-      {
-        role: 'user',
-        content: `Nome do arquivo: "${filename}"\n\nTexto extraído do PDF:\n\n${texto.substring(0, 16000)}`,
-      },
+REGRA PARA construtora (ordem de prioridade):
+1. LOGOS E CABEÇALHO na imagem: identifique a marca da incorporadora, construtora ou corretora parceira no topo (ex: AlfaRealty, Even, Cyrela, Lindenberg, Tibério). Leia texto dentro dos logos.
+2. construtora NUNCA é o nome do empreendimento: "Brunello Parque da Mooca", "Aura Moema", "Metropolitan" são empreendimentos — vão em empreendimentos_identificados, NÃO em construtora.
+3. Em tabelas de PARCEIRA/CORRETORA: o logo do topo (ex: AlfaRealty à esquerda) é quem apresenta a tabela — use como construtora, não o nome do projeto no centro/título.
+4. Use MARCA curta (AlfaRealty, Cyrela, Vitaurbana), NUNCA razão social longa do rodapé (ex: "Ilha Bella Incorporadora Ltda.").
+5. NOME DO ARQUIVO é indício secundário (após logos visuais).
+6. Se não houver incorporadora/corretora clara na imagem nem no texto, responda "A identificar" — NÃO use o nome do empreendimento como construtora.`
+
+export async function analisarPDF(
+  texto: string,
+  filename = '',
+  pdfBuffer?: Buffer
+): Promise<AnaliseIA> {
+  const capaPng = pdfBuffer ? await renderizarPrimeiraPagina(pdfBuffer) : null
+  const blocoTexto = `Nome do arquivo: "${filename}"\n\nTexto extraído do PDF:\n\n${texto.substring(0, 16000)}`
+
+  const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = capaPng
+    ? [
+        {
+          type: 'image_url',
+          image_url: {
+            url: `data:image/png;base64,${capaPng.toString('base64')}`,
+            detail: 'high',
+          },
+        },
+        {
+          type: 'text',
+          text: `${blocoTexto}\n\nUse a imagem da capa para ler logos e cabeçalho. O texto complementa tipo e lista de empreendimentos.`,
+        },
+      ]
+    : [{ type: 'text', text: blocoTexto }]
+
+  const completion = await openai.chat.completions.create({
+    model: AI_MODEL_ANALYZER,
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT_ANALISADOR },
+      { role: 'user', content: userContent },
     ],
     temperature: AI_TEMPERATURE,
     response_format: { type: 'json_object' },
@@ -212,6 +238,21 @@ REGRA PARA construtora:
   const content = completion.choices[0]?.message?.content
   if (!content) throw new Error('Resposta vazia do Agente Analisador')
   return JSON.parse(content) as AnaliseIA
+}
+
+/** Capa do PDF em PNG para classificação (logos/cabeçalho). Scale 2 basta para marcas. */
+async function renderizarPrimeiraPagina(buffer: Buffer): Promise<Buffer | null> {
+  try {
+    const parser = createPDFParser(buffer)
+    const result = await parser.getScreenshot({ scale: 2, base64: true } as { scale: number })
+    const first = result.pages?.[0] as { dataUrl?: string; base64?: string } | undefined
+    if (!first) return null
+    const b64 = (first.dataUrl ?? `data:image/png;base64,${first.base64}`).replace(/^data:image\/png;base64,/, '')
+    return Buffer.from(b64, 'base64')
+  } catch (err) {
+    console.warn('[analisarPDF] falha ao renderizar capa — classificação só com texto:', err)
+    return null
+  }
 }
 
 // Renderiza as páginas do PDF em alta resolução e retorna os PNGs (Buffer)
@@ -245,6 +286,29 @@ async function cortarEmFaixas(png: Buffer, n = 3, overlapPct = 0.03): Promise<Bu
   return faixas
 }
 
+function normMarca(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[^a-z0-9]/g, '')
+}
+
+/** Corrige linhas onde a extração usou o nome do empreendimento como construtora. */
+function alinharConstrutoraComAnalise(lancamentos: LancamentoAI[], analise: AnaliseIA): LancamentoAI[] {
+  const marca = analise.construtora?.trim()
+  if (!marca || marca === 'A identificar') return lancamentos
+
+  return lancamentos.map(l => {
+    const atual = (l.construtora ?? '').trim()
+    const emp = (l.empreendimento ?? '').trim()
+    if (!atual) return { ...l, construtora: marca }
+
+    const a = normMarca(atual)
+    const primeira = normMarca(emp.split(/\s+/)[0] ?? '')
+    if (a === primeira || (primeira && primeira.startsWith(a)) || normMarca(emp).startsWith(a)) {
+      return { ...l, construtora: marca }
+    }
+    return l
+  })
+}
+
 // SINGLE: um empreendimento, tipologias em várias páginas (ex: Metropolitan).
 // PDFs com 3+ páginas → renderiza + tiling (mesma técnica do multi) para não perder
 // páginas densas de preço (ex: 9–14). PDFs curtos → PDF inteiro numa chamada.
@@ -263,7 +327,10 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoN
   if (paginas.length <= 2) {
     const pdfBase64 = buffer.toString('base64')
     const result = await _extrairDePdf(SYSTEM_PROMPT_SINGLE, pdfBase64, contextoBase, textoNativo)
-    return normalizarLancamentos(deduplicar(result), textoNativo)
+    return alinharConstrutoraComAnalise(
+      normalizarLancamentos(deduplicar(result), textoNativo),
+      analise
+    )
   }
 
   const totalPaginas = paginas.length
@@ -283,7 +350,10 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoN
     return _extrairDeImagem(SYSTEM_PROMPT_SINGLE_FAIXA, png, contexto, textoNativo)
   })
 
-  return normalizarLancamentos(deduplicar(bruto), textoNativo)
+  return alinharConstrutoraComAnalise(
+    normalizarLancamentos(deduplicar(bruto), textoNativo),
+    analise
+  )
 }
 
 // MULTI: tabelas densas e hierárquicas → renderiza cada página em alta resolução,
@@ -312,7 +382,10 @@ export async function processarMulti(buffer: Buffer, analise: AnaliseIA, textoNa
     _extrairDeImagem(SYSTEM_PROMPT_MULTI, faixa, contexto, textoNativo)
   )
 
-  return normalizarLancamentos(deduplicar(bruto), textoNativo)
+  return alinharConstrutoraComAnalise(
+    normalizarLancamentos(deduplicar(bruto), textoNativo),
+    analise
+  )
 }
 
 async function mapWithConcurrency<T, R>(

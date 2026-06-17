@@ -65,7 +65,9 @@ Upload do PDF
 /api/processar
    │  1. baixa o PDF do Storage  →  buffer
    │  2. extrai TEXTO NATIVO com pdf-parse (PDFParse.getText)
-   │  3. analisarPDF(texto, filename)  →  { tipo: 'single'|'multi', construtora, ... }
+   │  3. analisarPDF(texto, filename, buffer)  →  { tipo, construtora, ... }
+   │     • renderiza capa (scale 2) + gpt-4o-mini com visão (logos/cabeçalho)
+   │     • texto nativo complementa tipo e empreendimentos
    │
    ├── tipo === 'single' ──►  processarSingle(buffer, analise)
    │                            • manda o PDF INTEIRO (base64) como `type:'file'`
@@ -147,7 +149,8 @@ Danti revelou: prompt enviesado para o Cyrela trazia 29 de ~50 linhas).
 | `max_tokens` (single) | `16000` | `_extrairDePdf` | resposta cabe |
 | `max_tokens` (multi/faixa) | `16000` | `_extrairDeImagem` | resposta por faixa cabe |
 | Texto nativo enviado | primeiros `22000` chars | `_extrairDeImagem` | referência de nomes/valores |
-| Texto p/ classificador | primeiros `8000` chars | `analisarPDF` | basta para classificar |
+| Texto p/ classificador | primeiros `16000` chars | `analisarPDF` | complementa visão da capa |
+| Capa p/ classificador | 1ª página PNG scale `2`, `detail:high` | `analisarPDF` | logos e cabeçalho (v1.5) |
 | `detail` da imagem | `high` | `_extrairDeImagem` | leitura de fonte pequena |
 
 > ⚠️ **Histórico de erro a NÃO repetir:** `max_tokens: 16000` no fluxo *com PDF
@@ -174,9 +177,12 @@ Danti revelou: prompt enviesado para o Cyrela trazia 29 de ~50 linhas).
 - Em faixa sem cabeçalho: inferir bairro pelo **endereço** ou pelo texto nativo.
 - `bairro` normalizado "Bairro, Cidade"; nome de empreendimento limpo, sem sufixos.
 
-**Classificador** (`analisarPDF`):
-- Usa a **MARCA** da construtora (Lindenberg, Cyrela…), nunca a razão social do rodapé.
-- Usa o **nome do arquivo** como indício forte da construtora.
+**Classificador** (`analisarPDF`) — v1.5 visão da capa:
+- Recebe **imagem da 1ª página** + texto nativo; prioriza **logos/cabeçalho** para `construtora`.
+- `construtora` **nunca** é o nome do empreendimento (ex.: Brunello → empreendimento; AlfaRealty no logo → construtora).
+- Em tabelas de parceira/corretora, usa a marca do **topo** (logo), não o título do projeto.
+- Usa a **MARCA** da incorporadora (Lindenberg, Cyrela…), nunca a razão social do rodapé.
+- Nome do arquivo é indício secundário. Se incerto → `"A identificar"`.
 
 **Pós-processamento** (`deduplicar`) — **consolida, não descarta** (v1.1):
 - Chave normalizada: empreendimento e tipologia em minúsculo/sem acentos/sem

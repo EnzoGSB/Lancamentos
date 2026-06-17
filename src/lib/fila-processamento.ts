@@ -3,6 +3,7 @@ export type ProcessamentoMin = {
   status: string
   created_at?: string | null
   original_filename?: string | null
+  page_count?: number | null
 }
 
 /** Status visíveis como “processando” na UI. */
@@ -18,6 +19,10 @@ export const STATUS_EM_PROGRESSO = [
 
 function ordenarPendentes(pendentes: ProcessamentoMin[]) {
   return [...pendentes].sort((a, b) => {
+    const pa = a.page_count ?? Number.MAX_SAFE_INTEGER
+    const pb = b.page_count ?? Number.MAX_SAFE_INTEGER
+    if (pa !== pb) return pa - pb
+
     const ta = a.created_at ? new Date(a.created_at).getTime() : 0
     const tb = b.created_at ? new Date(b.created_at).getTime() : 0
     return ta - tb
@@ -34,7 +39,7 @@ export function emProgresso(status: string): boolean {
   return (STATUS_EM_PROGRESSO as readonly string[]).includes(status)
 }
 
-/** Próximo PDF pendente na fila global (FIFO por created_at). */
+/** Próximo PDF pendente na fila global (menos páginas primeiro; empate por created_at). */
 export function proximoPendente(processamentos: ProcessamentoMin[]): ProcessamentoMin | null {
   if (haProcessamentoEmAndamento(processamentos)) return null
 

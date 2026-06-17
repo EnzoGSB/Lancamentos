@@ -135,6 +135,7 @@ export default function UploadPage() {
       <p className="text-sm sm:text-base text-gray-500 mb-5 sm:mb-6">
         Envie um ou vários PDFs. Cada arquivo entra na <strong className="font-medium text-gray-700">fila global</strong>:
         um PDF é processado por vez; os demais aguardam automaticamente no Dashboard.
+        PDFs com <strong className="font-medium text-gray-700">menos páginas</strong> têm prioridade na fila.
       </p>
 
       <Card className="mb-6">
