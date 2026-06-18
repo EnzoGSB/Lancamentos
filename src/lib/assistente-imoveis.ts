@@ -389,7 +389,7 @@ export async function interpretarBusca(
 
   const completion = await getOpenAIBusca().chat.completions.create({
     model: AI_MODEL_ASSISTENTE,
-    temperature: 0.2,
+    temperature: 0.1,
     max_tokens: 800,
     response_format: { type: 'json_object' },
     messages: [
