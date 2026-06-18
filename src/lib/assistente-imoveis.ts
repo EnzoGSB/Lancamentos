@@ -11,6 +11,7 @@ import {
   corrigirTermosBusca,
   extrairHeuristicaComercial,
 } from './busca-texto'
+import { ajustarFiltrosBairro } from './bairro-busca'
 import type { Lancamento } from './types'
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
@@ -178,7 +179,11 @@ function limparFiltros(raw: Record<string, unknown>): FiltrosInterpretados {
   return filtros
 }
 
-function aplicarHeuristicas(message: string, filtros: FiltrosInterpretados): FiltrosInterpretados {
+function aplicarHeuristicas(
+  message: string,
+  filtros: FiltrosInterpretados,
+  catalogoBairros: string[]
+): FiltrosInterpretados {
   const comercial = extrairHeuristicaComercial(message)
   let next: FiltrosInterpretados = { ...filtros }
 
@@ -241,7 +246,7 @@ function aplicarHeuristicas(message: string, filtros: FiltrosInterpretados): Fil
     }
   }
 
-  return ajustarContagensExatas(message, next)
+  return ajustarContagensExatas(message, ajustarFiltrosBairro(message, next, catalogoBairros))
 }
 
 function resumirOpcoes(opcoes: OpcoesCatalogo) {
@@ -327,7 +332,11 @@ Para características como "duplex", "studio", "cobertura", use termos: ["duplex
 - "entre 500 mil e 800 mil" → valor_min: 500000, valor_max: 800000
 
 ## Bairro e catálogo
-Use nomes do catálogo fornecido quando possível. Casamento aproximado é permitido.
+- Use **sempre** o campo **bairro** com o nome **exato** do catálogo quando o usuário citar um bairro.
+- **Não** confunda bairros parecidos (ex.: Vila Madalena ≠ Vila Mariana, Moema ≠ Morumbi).
+- **Não** use casamento aproximado entre bairros distintos — só o sistema tolera typo de 1 letra ou diferença de acento.
+- **Não** use termos: ["vila"] ou fragmentos soltos para localização — use bairro: ["Nome exato do catálogo"].
+- Se o bairro pedido não existir no catálogo, não substitua por outro semelhante; use q com a frase completa do bairro pedido.
 
 ## Entrega / imóvel pronto / datas de entrega
 No catálogo, data_entrega usa formatos como "Pronto", "Mai/2027", "Out/2028", "06/2026".
@@ -389,7 +398,7 @@ export async function interpretarBusca(
 
   const completion = await getOpenAIBusca().chat.completions.create({
     model: AI_MODEL_ASSISTENTE,
-    temperature: 0.1,
+    temperature: 0,
     max_tokens: 800,
     response_format: { type: 'json_object' },
     messages: [
@@ -419,6 +428,6 @@ export async function interpretarBusca(
 
   return {
     resposta,
-    filtros: aplicarHeuristicas(message, limparFiltros(parsed.filtros ?? {})),
+    filtros: aplicarHeuristicas(message, limparFiltros(parsed.filtros ?? {}), opcoes.bairros),
   }
 }

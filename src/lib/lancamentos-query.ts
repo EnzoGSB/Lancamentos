@@ -5,6 +5,7 @@ import {
   isBuscaTipologiaComercial,
   matchesConsultaTexto,
 } from './busca-texto'
+import { bairrosCoincidem } from './bairro-busca'
 import {
   matchesFiltroAndar,
   padroesAndarSqlOr,
@@ -305,6 +306,10 @@ function filtrarPosQuery(
 
     if (!matchesTermos(l, filtros)) return false
 
+    if (filtros.bairro?.length) {
+      if (!l.bairro || !filtros.bairro.some(b => bairrosCoincidem(b, l.bairro))) return false
+    }
+
     if (!matchesValor(l, filtros.valor_min, filtros.valor_max)) return false
     if (!matchesCampoParcial(l.unidade, filtros.unidade)) return false
     if (!matchesFiltroAndar(l, filtros.andar)) return false
@@ -325,8 +330,7 @@ function scoreRelevancia(l: Lancamento, filtros: FiltrosLancamentos): number {
   let score = 0
   const texto = textoCompletoImovel(l)
 
-  if (filtros.bairro?.length && l.bairro && filtros.bairro.some(b =>
-    l.bairro!.toLowerCase().includes(b.toLowerCase()))) {
+  if (filtros.bairro?.length && l.bairro && filtros.bairro.some(b => bairrosCoincidem(b, l.bairro))) {
     score += 15
   }
 
