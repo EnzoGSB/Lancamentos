@@ -169,6 +169,33 @@ export function matchesFiltroMetragem(
   return matchesMetragem(l, min, max, percentTolerance)
 }
 
+/** Faixa de m² na página Imóveis: entre min e max; só min = a partir de; só max = até. */
+export function matchesFiltroMetragemFaixa(
+  l: Lancamento,
+  min: number | null | undefined,
+  max: number | null | undefined
+): boolean {
+  if (min == null && max == null) return true
+  const item = parseMetragemM2(l.metragem)
+  if (item.min == null && item.max == null) return false
+
+  const iMin = item.min ?? item.max!
+  const iMax = item.max ?? item.min!
+
+  if (min != null && max != null) return iMin >= min && iMax <= max
+  if (min != null) return iMin >= min
+  if (max != null) return iMax <= max
+  return true
+}
+
+export function matchesFiltroValor(
+  l: Lancamento,
+  min: number | null | undefined,
+  max: number | null | undefined
+): boolean {
+  return matchesValor(l, min, max)
+}
+
 export function matchesFiltroVagas(
   l: Lancamento,
   min: number | null | undefined

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { matchesFiltroMetragem, matchesFiltroVagas } from '@/lib/lancamentos-query'
+import { matchesFiltroMetragemFaixa, matchesFiltroValor, matchesFiltroVagas } from '@/lib/lancamentos-query'
 import { matchesFiltrosTipologiaDormitorio } from '@/lib/tipologia-filtro'
 import type { Lancamento } from '@/lib/types'
 
@@ -43,12 +43,16 @@ export async function GET(request: NextRequest) {
   const metMin = metragemMin != null && metragemMin !== '' ? Number(metragemMin) : null
   const metMax = metragemMax != null && metragemMax !== '' ? Number(metragemMax) : null
   const vagasMinNum = vagasMin != null && vagasMin !== '' ? Number(vagasMin) : null
+  const valMin = valorMin != null && valorMin !== '' ? Number(valorMin) : null
+  const valMax = valorMax != null && valorMax !== '' ? Number(valorMax) : null
 
   const posFiltroTipologia = tipos.length > 0 || dormitorios.length > 0
   const posFiltroMemoria = posFiltroTipologia
     || (metMin != null && Number.isFinite(metMin))
     || (metMax != null && Number.isFinite(metMax))
     || (vagasMinNum != null && Number.isFinite(vagasMinNum) && vagasMinNum > 0)
+    || (valMin != null && Number.isFinite(valMin))
+    || (valMax != null && Number.isFinite(valMax))
 
   let query = supabaseAdmin
     .from('lancamentos')
@@ -90,10 +94,8 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const min = valorMin != null && valorMin !== '' ? Number(valorMin) : null
-  const max = valorMax != null && valorMax !== '' ? Number(valorMax) : null
-  if (min != null && Number.isFinite(min)) query = query.gte('valor_minimo', min)
-  if (max != null && Number.isFinite(max)) query = query.lte('valor_minimo', max)
+  const min = valMin != null && Number.isFinite(valMin) ? valMin : null
+  const max = valMax != null && Number.isFinite(valMax) ? valMax : null
 
   const { data, error, count } = await query
 
@@ -104,7 +106,8 @@ export async function GET(request: NextRequest) {
   if (posFiltroMemoria) {
     lancamentos = lancamentos.filter(l => {
       if (!matchesFiltrosTipologiaDormitorio(l.tipologia, tipos, dormitorios)) return false
-      if (!matchesFiltroMetragem(l, metMin, metMax, 0)) return false
+      if (!matchesFiltroMetragemFaixa(l, metMin, metMax)) return false
+      if (!matchesFiltroValor(l, min, max)) return false
       if (!matchesFiltroVagas(l, vagasMinNum)) return false
       return true
     })
