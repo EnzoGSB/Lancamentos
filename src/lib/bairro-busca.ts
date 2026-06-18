@@ -83,6 +83,26 @@ export function resolverBairrosNoCatalogo(pedidos: string[], catalogo: string[])
   return resolvidos
 }
 
+function extrairCandidatosLocalizacao(message: string): string[] {
+  const texto = normalizarTextoBusca(message)
+  const candidatos: string[] = []
+
+  const padroes = [
+    /\b(?:na\s+)?regiao\s+(?:de|da|do)\s+(.+?)(?=\s+(?:com|ate|a\s+partir|no\s+minimo|pelo\s+menos)\s+|$)/i,
+    /\bbairro\s+(?:de|da|do)\s+(.+?)(?=\s+(?:com|ate|a\s+partir)\s+|$)/i,
+  ]
+
+  for (const re of padroes) {
+    const m = texto.match(re)
+    if (m?.[1]) {
+      const nome = m[1].trim()
+      if (nome.length >= 3) candidatos.push(nome)
+    }
+  }
+
+  return candidatos
+}
+
 function textoContemBairro(texto: string, parteCatalogo: string): boolean {
   if (!parteCatalogo) return false
   if (texto.includes(parteCatalogo)) return true
@@ -109,6 +129,20 @@ export function extrairBairrosDaMensagem(message: string, catalogo: string[]): s
   const encontrados: string[] = []
   const vistos = new Set<string>()
 
+  const add = (entrada: string) => {
+    if (!vistos.has(entrada)) {
+      vistos.add(entrada)
+      encontrados.push(entrada)
+    }
+  }
+
+  // "na região de/da/do …" ou "bairro de …"
+  for (const candidato of extrairCandidatosLocalizacao(message)) {
+    const canon = melhorCasamentoBairro(candidato, catalogo)
+    if (canon) add(canon)
+  }
+  if (encontrados.length > 0) return encontrados
+
   const ordenado = [...catalogo].sort(
     (a, b) => parteBairro(b).length - parteBairro(a).length
   )
@@ -117,9 +151,7 @@ export function extrairBairrosDaMensagem(message: string, catalogo: string[]): s
     const parte = parteBairro(entrada)
     if (parte.length < 5) continue
     if (!textoContemBairro(texto, parte)) continue
-    if (vistos.has(entrada)) continue
-    vistos.add(entrada)
-    encontrados.push(entrada)
+    add(entrada)
   }
 
   return encontrados
@@ -137,6 +169,9 @@ const TERMOS_LOCALIZACAO_SOLTO = new Set([
   'na',
   'no',
   'em',
+  'da',
+  'do',
+  'de',
 ])
 
 function termoEhFragmentoLocalComPartes(
@@ -183,6 +218,7 @@ export function limparBuscaTextoDeBairro<T extends { q?: string; termos?: string
       q = q.replace(new RegExp(parte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ')
     }
     q = q
+      .replace(/\b(?:na\s+)?regiao\s+(?:de|da|do)\s+/gi, ' ')
       .replace(/\b(?:na|no|em)\s+(?:vila|bairro)\b/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim()
@@ -210,10 +246,18 @@ export function ajustarFiltrosBairro<T extends { q?: string; termos?: string[]; 
     let next = { ...filtros }
     delete next.bairro
 
+    const candidatosRegiao = extrairCandidatosLocalizacao(message)
+    const resolvidosRegiao = resolverBairrosNoCatalogo(candidatosRegiao, catalogo)
+    if (resolvidosRegiao.length > 0) {
+      next = { ...next, bairro: resolvidosRegiao }
+      return limparBuscaTextoDeBairro(next, resolvidosRegiao)
+    }
+
     const texto = normalizarTextoBusca(message)
-    const fraseBairro = texto.match(
-      /\b(?:vila|jardim|jardins|parque|chacara)\s+[a-z]{3,}(?:\s+[a-z]{3,})?/
-    )?.[0]
+    const fraseBairro = candidatosRegiao[0]
+      ?? texto.match(
+        /\b(?:vila|jardim|jardins|parque|chacara)\s+[a-z]{3,}(?:\s+[a-z]{3,})?/
+      )?.[0]
 
     if (fraseBairro) {
       if (next.termos?.length) {
@@ -223,7 +267,11 @@ export function ajustarFiltrosBairro<T extends { q?: string; termos?: string[]; 
         if (termos.length) next.termos = termos
         else delete next.termos
       }
-      if (!next.q?.trim()) next.q = fraseBairro
+      const qAtual = normalizarTextoBusca(next.q ?? '')
+      const fraseNorm = normalizarTextoBusca(fraseBairro)
+      if (!qAtual || qAtual.includes('regiao') || !qAtual.includes(fraseNorm)) {
+        next.q = fraseBairro
+      }
     }
 
     return next

@@ -70,6 +70,8 @@ export type ResultadoBusca = {
 }
 
 const TOLERANCIA_METRAGEM_PERCENT = 0.05
+/** Teto de linhas buscadas no banco quando o assistente pede resultados sem limite de exibição. */
+const LIMITE_FETCH_CATALOGO = 50_000
 
 function escapeIlike(value: string) {
   return value.replace(/[%_\\]/g, '\\$&')
@@ -152,10 +154,28 @@ export function isDuplex(l: Lancamento): boolean {
   return /duplex/i.test(textoCompletoImovel(l))
 }
 
-function parseVagas(val: string | null | undefined): number | null {
+export function parseVagas(val: string | null | undefined): number | null {
   if (!val?.trim()) return null
   const n = parseInt(val.trim(), 10)
   return Number.isFinite(n) ? n : null
+}
+
+export function matchesFiltroMetragem(
+  l: Lancamento,
+  min: number | null | undefined,
+  max: number | null | undefined,
+  percentTolerance = 0
+): boolean {
+  return matchesMetragem(l, min, max, percentTolerance)
+}
+
+export function matchesFiltroVagas(
+  l: Lancamento,
+  min: number | null | undefined
+): boolean {
+  if (min == null || min <= 0) return true
+  const v = parseVagas(l.vagas)
+  return v != null && v >= min
 }
 
 function matchesMetragem(
@@ -448,30 +468,37 @@ function buscarEmMemoria(
   candidatos: Lancamento[],
   filtros: FiltrosLancamentos,
   percentToleranceMetragem: number,
-  limit: number
+  limit?: number
 ): Lancamento[] {
   const filtrados = filtrarPosQuery(candidatos, filtros, percentToleranceMetragem)
-  return ordenarPorRelevancia(filtrados, filtros).slice(0, limit)
+  const ordenados = ordenarPorRelevancia(filtrados, filtros)
+  if (limit == null) return ordenados
+  return ordenados.slice(0, limit)
 }
 
 export async function buscarLancamentos(
   supabase: SupabaseClient,
   filtros: FiltrosLancamentos,
-  opts?: { limit?: number; offset?: number }
+  opts?: { limit?: number | null; offset?: number }
 ): Promise<ResultadoBusca> {
-  const limit = Math.min(opts?.limit ?? 50, 100)
+  const semLimite = opts?.limit === null
+  const limit = semLimite ? null : Math.min(opts?.limit ?? 50, 100)
   const offset = Math.max(opts?.offset ?? 0, 0)
   const posFiltro = precisaPosFiltro(filtros)
-  const fetchLimit = posFiltro ? Math.min(limit * 12, 1000) : limit
+  const fetchLimit = semLimite
+    ? LIMITE_FETCH_CATALOGO
+    : posFiltro
+      ? Math.min((limit ?? 50) * 12, 1000)
+      : (limit ?? 50)
   const temMetragem = filtros.metragem_min != null || filtros.metragem_max != null
 
   const candidatos = await executarQuerySql(supabase, filtros, fetchLimit, offset)
 
-  let lancamentos = buscarEmMemoria(candidatos, filtros, 0, limit)
+  let lancamentos = buscarEmMemoria(candidatos, filtros, 0, limit ?? undefined)
   let usouTolerancia = false
 
   if (lancamentos.length === 0 && temMetragem && candidatos.length > 0) {
-    lancamentos = buscarEmMemoria(candidatos, filtros, TOLERANCIA_METRAGEM_PERCENT, limit)
+    lancamentos = buscarEmMemoria(candidatos, filtros, TOLERANCIA_METRAGEM_PERCENT, limit ?? undefined)
     if (lancamentos.length > 0) usouTolerancia = true
   }
 
@@ -486,7 +513,7 @@ export async function buscarLancamentos(
   return {
     lancamentos,
     total: lancamentos.length,
-    limit,
+    limit: limit ?? lancamentos.length,
     offset,
     usou_tolerancia_metragem: usouTolerancia,
     usou_busca_similar: false,

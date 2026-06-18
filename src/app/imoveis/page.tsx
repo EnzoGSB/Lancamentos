@@ -28,6 +28,9 @@ type Filtros = FiltrosMulti & {
   q: string
   valor_min: string
   valor_max: string
+  metragem_min: string
+  metragem_max: string
+  vagas_min: string
 }
 
 type OpcoesFiltro = {
@@ -50,6 +53,9 @@ const FILTROS_VAZIOS: Filtros = {
   entrega: [],
   valor_min: '',
   valor_max: '',
+  metragem_min: '',
+  metragem_max: '',
+  vagas_min: '',
 }
 
 const PAGE_SIZE = 30
@@ -327,6 +333,9 @@ export default function ImoveisPage() {
       filtros.entrega.forEach(v => params.append('entrega', v))
       if (filtros.valor_min) params.set('valor_min', filtros.valor_min)
       if (filtros.valor_max) params.set('valor_max', filtros.valor_max)
+      if (filtros.metragem_min) params.set('metragem_min', filtros.metragem_min)
+      if (filtros.metragem_max) params.set('metragem_max', filtros.metragem_max)
+      if (filtros.vagas_min) params.set('vagas_min', filtros.vagas_min)
 
       const res = await fetch(`/api/lancamentos?${params}`)
       const data = await res.json()
@@ -433,6 +442,9 @@ export default function ImoveisPage() {
       filtros.q !== ''
       || filtros.valor_min !== ''
       || filtros.valor_max !== ''
+      || filtros.metragem_min !== ''
+      || filtros.metragem_max !== ''
+      || filtros.vagas_min !== ''
       || filtros.construtora.length > 0
       || filtros.empreendimento.length > 0
       || filtros.bairro.length > 0
@@ -538,6 +550,36 @@ export default function ImoveisPage() {
               options={opcoes.entregas}
               onChange={v => atualizarFiltroMulti('entrega', v)}
             />
+            <div className="flex flex-col gap-1 w-full sm:min-w-[120px] sm:flex-1">
+              <label className="text-sm font-medium text-gray-500">Metragem mín. (m²)</label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                placeholder="Ex: 70"
+                value={filtros.metragem_min}
+                onChange={e => setFiltros(prev => ({ ...prev, metragem_min: e.target.value }))}
+              />
+            </div>
+            <div className="flex flex-col gap-1 w-full sm:min-w-[120px] sm:flex-1">
+              <label className="text-sm font-medium text-gray-500">Metragem máx. (m²)</label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                placeholder="Ex: 120"
+                value={filtros.metragem_max}
+                onChange={e => setFiltros(prev => ({ ...prev, metragem_max: e.target.value }))}
+              />
+            </div>
+            <div className="flex flex-col gap-1 w-full sm:min-w-[120px] sm:flex-1">
+              <label className="text-sm font-medium text-gray-500">Vagas (mín.)</label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                placeholder="Ex: 2"
+                value={filtros.vagas_min}
+                onChange={e => setFiltros(prev => ({ ...prev, vagas_min: e.target.value.replace(/\D/g, '') }))}
+              />
+            </div>
             <div className="flex flex-col gap-1 w-full sm:min-w-[120px] sm:flex-1">
               <label className="text-sm font-medium text-gray-500">Valor mín. (R$)</label>
               <Input

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { matchesFiltroMetragem, matchesFiltroVagas } from '@/lib/lancamentos-query'
 import { matchesFiltrosTipologiaDormitorio } from '@/lib/tipologia-filtro'
+import type { Lancamento } from '@/lib/types'
 
 function escapeIlike(value: string) {
   return value.replace(/[%_\\]/g, '\\$&')
@@ -32,18 +34,30 @@ export async function GET(request: NextRequest) {
   const entregas = parseMulti(searchParams, 'entrega')
   const valorMin = searchParams.get('valor_min')
   const valorMax = searchParams.get('valor_max')
+  const metragemMin = searchParams.get('metragem_min')
+  const metragemMax = searchParams.get('metragem_max')
+  const vagasMin = searchParams.get('vagas_min')
   const limit = Math.min(Number(searchParams.get('limit') ?? 500), 1000)
   const offset = Math.max(Number(searchParams.get('offset') ?? 0), 0)
+
+  const metMin = metragemMin != null && metragemMin !== '' ? Number(metragemMin) : null
+  const metMax = metragemMax != null && metragemMax !== '' ? Number(metragemMax) : null
+  const vagasMinNum = vagasMin != null && vagasMin !== '' ? Number(vagasMin) : null
+
   const posFiltroTipologia = tipos.length > 0 || dormitorios.length > 0
+  const posFiltroMemoria = posFiltroTipologia
+    || (metMin != null && Number.isFinite(metMin))
+    || (metMax != null && Number.isFinite(metMax))
+    || (vagasMinNum != null && Number.isFinite(vagasMinNum) && vagasMinNum > 0)
 
   let query = supabaseAdmin
     .from('lancamentos')
-    .select('*', { count: posFiltroTipologia ? undefined : 'exact' })
+    .select('*', { count: posFiltroMemoria ? undefined : 'exact' })
     .order('construtora')
     .order('empreendimento')
     .order('tipologia')
 
-  if (posFiltroTipologia) {
+  if (posFiltroMemoria) {
     query = query.range(0, 9999)
   } else {
     query = query.range(offset, offset + limit - 1)
@@ -85,12 +99,15 @@ export async function GET(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  let lancamentos = data ?? []
+  let lancamentos = (data ?? []) as Lancamento[]
 
-  if (posFiltroTipologia) {
-    lancamentos = lancamentos.filter(l =>
-      matchesFiltrosTipologiaDormitorio(l.tipologia, tipos, dormitorios)
-    )
+  if (posFiltroMemoria) {
+    lancamentos = lancamentos.filter(l => {
+      if (!matchesFiltrosTipologiaDormitorio(l.tipologia, tipos, dormitorios)) return false
+      if (!matchesFiltroMetragem(l, metMin, metMax, 0)) return false
+      if (!matchesFiltroVagas(l, vagasMinNum)) return false
+      return true
+    })
     const total = lancamentos.length
     lancamentos = lancamentos.slice(offset, offset + limit)
     return NextResponse.json({ lancamentos, total, limit, offset })

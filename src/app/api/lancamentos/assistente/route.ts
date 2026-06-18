@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     const opcoes = await carregarOpcoesCatalogo(supabaseAdmin)
     const { resposta, filtros } = await interpretarBusca(message, history, opcoes)
-    const resultado = await buscarLancamentos(supabaseAdmin, filtros, { limit: 24 })
+    const resultado = await buscarLancamentos(supabaseAdmin, filtros, { limit: null })
 
     const imoveis = resultado.lancamentos.map(lancamentoParaResumo)
 
