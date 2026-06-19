@@ -144,7 +144,7 @@ Danti revelou: prompt enviesado para o Cyrela trazia 29 de ~50 linhas).
 | Nº de faixas (tiling) | `3`, `4` ou `5` | `numFaixasPorDocumento` | baseado em **nº de páginas** (+ hint de empreendimentos); v1.2 |
 | Retentativas por faixa | `3` | `_extrairDeImagem`, `_extrairDePdf` | retry em vazio/truncado; v1.2 |
 | Segunda passagem faixas vazias | sim | `extrairFaixasComCobertura` | reprocessa faixas que falharam; v1.2 |
-| Limite faixas vazias | `15%` | `extrairFaixasComCobertura` | erro se cobertura insuficiente; v1.2 |
+| Limite faixas vazias | `35%` | `extrairFaixasComCobertura` | erro se cobertura insuficiente; v1.7 |
 | Overlap das faixas | `3%` (`0.03`) | `cortarEmFaixas` | cobre fronteira sem duplicar demais |
 | `max_tokens` (single) | `16000` | `_extrairDePdf` | resposta cabe |
 | `max_tokens` (multi/faixa) | `16000` | `_extrairDeImagem` | resposta por faixa cabe |
@@ -276,3 +276,6 @@ Se algum desses regredir, a alteração que causou isso deve ser revertida.
 - **v1.4** — Somente blocos tabulares (decisão explícita do dono). `REGRA_SOMENTE_TABELAS`
   nos prompts: extrair apenas tabelas com cabeçalho de colunas; ignorar plantas,
   mapas coloridos e grades apto+m² sem estrutura tabular de preço/dados.
+- **v1.7** — Limite de faixas vazias 15% → 35% (decisão explícita do dono).
+  PDFs single com capa/plantas geravam faixas vazias legítimas acima do teto e
+  abortavam (ex.: 4/12 faixas). Erro permanece se mais de um terço das faixas falhar.

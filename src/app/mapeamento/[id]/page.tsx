@@ -19,6 +19,7 @@ import {
 } from '@/lib/formatar-lancamento'
 import { cn } from '@/lib/utils'
 import { ProcessamentoProgressBar } from '@/components/processamento-progress-bar'
+import { VerPdfButton } from '@/components/ver-pdf-button'
 import { posicaoNaFila } from '@/lib/fila-processamento'
 import { EVENTO_FILA_ATUALIZADA, solicitarProcessamento } from '@/lib/processamento-fila-worker'
 import {
@@ -895,14 +896,20 @@ export default function MapeamentoPage() {
                 </span>
               )}
             </div>
-            <Button
-              onClick={handleConfirm}
-              disabled={confirming || lancamentos.length === 0}
-              size="lg"
-              className="w-full sm:w-auto touch-manipulation shrink-0"
-            >
-              {confirming ? 'Salvando...' : `Confirmar e Salvar ${lancamentos.length} lançamentos`}
-            </Button>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+              <VerPdfButton
+                processamentoId={id}
+                className="justify-center py-2 px-4 text-sm touch-manipulation"
+              />
+              <Button
+                onClick={handleConfirm}
+                disabled={confirming || lancamentos.length === 0}
+                size="lg"
+                className="w-full sm:w-auto touch-manipulation"
+              >
+                {confirming ? 'Salvando...' : `Confirmar e Salvar ${lancamentos.length} lançamentos`}
+              </Button>
+            </div>
           </div>
 
           <ConfirmDialog

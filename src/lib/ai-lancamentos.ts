@@ -9,7 +9,7 @@ import { lerConcorrenciaFaixas } from './extracao-concorrencia'
 const AI_TEMPERATURE = 0
 const MAX_TENTATIVAS_EXTRACAO = 3
 /** Faixas vazias acima desta fração → erro (evita resultado incompleto silencioso). */
-const MAX_FAIXAS_VAZIAS_RATIO = 0.15
+const MAX_FAIXAS_VAZIAS_RATIO = 0.35
 
 function numFaixasPorDocumento(totalPaginas: number, empreendimentosHint: number): number {
   if (totalPaginas >= 15 || empreendimentosHint >= 45) return 5
