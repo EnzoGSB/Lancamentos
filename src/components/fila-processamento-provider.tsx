@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { EVENTO_FILA_ATUALIZADA, tentarProcessarProximo } from '@/lib/processamento-fila-worker'
 
-const POLL_MS = 3000
+const POLL_MS = 15_000
 
 export function FilaProcessamentoProvider({ children }: { children: React.ReactNode }) {
   const tickRef = useRef<() => void>(() => {})

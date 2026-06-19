@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Trash2, Undo2 } from 'lucide-react'
+import { Loader2, Trash2, Undo2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -18,14 +18,9 @@ import {
   sanitizarMetragemTexto,
 } from '@/lib/formatar-lancamento'
 import { cn } from '@/lib/utils'
-import { ProcessamentoProgressBar } from '@/components/processamento-progress-bar'
 import { VerPdfButton } from '@/components/ver-pdf-button'
 import { posicaoNaFila } from '@/lib/fila-processamento'
 import { EVENTO_FILA_ATUALIZADA, solicitarProcessamento } from '@/lib/processamento-fila-worker'
-import {
-  calcularProgressoEstimado,
-  sublabelProgressoEstimado,
-} from '@/lib/processamento-progresso-estimado'
 import {
   construtoraEfetivaProcessamento,
   construtoraManualSeAplicavel,
@@ -175,7 +170,6 @@ export default function MapeamentoPage() {
   const [analise, setAnalise] = useState<AnaliseIA | null>(null)
   const [lancamentos, setLancamentos] = useState<LancamentoAI[]>([])
   const [posicaoFila, setPosicaoFila] = useState<number | null>(null)
-  const [progressoEstimado, setProgressoEstimado] = useState(0)
   const [selectedCell, setSelectedCell] = useState<CellCoord | null>(null)
   const [selectedCells, setSelectedCells] = useState<Set<string>>(() => new Set())
   const [selectionAnchor, setSelectionAnchor] = useState<CellCoord | null>(null)
@@ -194,8 +188,6 @@ export default function MapeamentoPage() {
   const dragStateRef = useRef<DragState | null>(null)
   const skipNextFocusSelectionRef = useRef(false)
   const multiEditUndoPushedRef = useRef(false)
-  const processandoDesdeRef = useRef<number | null>(null)
-  const statusAnteriorRef = useRef('')
 
   const construtoraExibida = useMemo(() => {
     const manual = construtoraManualSeAplicavel(analise?.construtora, lancamentos)
@@ -424,36 +416,6 @@ export default function MapeamentoPage() {
     const interval = setInterval(poll, 3000)
     return () => clearInterval(interval)
   }, [id, status, limparSelecoes])
-
-  useEffect(() => {
-    if (status === 'processando' && statusAnteriorRef.current !== 'processando') {
-      processandoDesdeRef.current = Date.now()
-    }
-    if (!['pendente', ...STATUS_EM_PROGRESSO].includes(status)) {
-      processandoDesdeRef.current = null
-    }
-    statusAnteriorRef.current = status
-  }, [status])
-
-  useEffect(() => {
-    const emProgresso =
-      loading || ['pendente', ...STATUS_EM_PROGRESSO].includes(status)
-    if (!emProgresso) return
-
-    const atualizar = () => {
-      if (loading && !['pendente', ...STATUS_EM_PROGRESSO].includes(status)) {
-        setProgressoEstimado(5)
-        return
-      }
-      setProgressoEstimado(
-        calcularProgressoEstimado(status, processandoDesdeRef.current, posicaoFila)
-      )
-    }
-
-    atualizar()
-    const interval = setInterval(atualizar, 1000)
-    return () => clearInterval(interval)
-  }, [loading, status, posicaoFila])
 
   const handleRetry = useCallback(async () => {
     setProcessing(true)
@@ -761,11 +723,9 @@ export default function MapeamentoPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh] px-4">
-        <ProcessamentoProgressBar
-          percent={progressoEstimado}
-          label="Carregando..."
-        />
+      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3 px-4 text-gray-500">
+        <Loader2 className="size-8 animate-spin" />
+        <p>Carregando...</p>
       </div>
     )
   }
@@ -776,18 +736,16 @@ export default function MapeamentoPage() {
 
       {status === 'pendente' && (
         <Card className="mb-6">
-          <CardContent className="py-10 px-6">
-            <ProcessamentoProgressBar
-              percent={progressoEstimado}
-              label="PDF na fila de processamento"
-              sublabel={
-                posicaoFila != null && posicaoFila > 1
-                  ? `Posição ${posicaoFila} na fila — aguardando o PDF anterior terminar.`
-                  : 'Aguardando slot livre — o processamento inicia automaticamente.'
-              }
-            />
-            <p className="text-xs text-gray-400 text-center mt-4">
-              {sublabelProgressoEstimado('pendente')}
+          <CardContent className="py-10 px-6 text-center space-y-3">
+            <Loader2 className="size-8 animate-spin mx-auto text-blue-600" />
+            <p className="text-lg font-medium text-gray-700">PDF na fila de processamento</p>
+            <p className="text-sm text-gray-500">
+              {posicaoFila != null && posicaoFila > 1
+                ? `Posição ${posicaoFila} na fila — aguardando o PDF anterior terminar.`
+                : 'Aguardando slot livre — o processamento inicia automaticamente.'}
+            </p>
+            <p className="text-xs text-gray-400">
+              Apenas um PDF é processado por vez. Acompanhe a fila no Dashboard.
             </p>
           </CardContent>
         </Card>
@@ -795,12 +753,16 @@ export default function MapeamentoPage() {
 
       {STATUS_EM_PROGRESSO.includes(status) && (
         <Card className="mb-6">
-          <CardContent className="py-10 px-6">
-            <ProcessamentoProgressBar
-              percent={progressoEstimado}
-              label={STATUS_LABEL[status] ?? 'Processando...'}
-              sublabel={sublabelProgressoEstimado(status)}
-            />
+          <CardContent className="py-10 px-6 text-center space-y-3">
+            <Loader2 className="size-8 animate-spin mx-auto text-blue-600" />
+            <p className="text-lg font-medium text-gray-700">
+              {STATUS_LABEL[status] ?? 'Processando...'}
+            </p>
+            {status === 'processando' && (
+              <p className="text-sm text-gray-500">
+                PDFs grandes podem levar 10–20 minutos.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

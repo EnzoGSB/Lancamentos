@@ -14,6 +14,11 @@ export async function POST(request: NextRequest) {
 
   const result = await executarProcessamento(processamentoId)
 
+  if ('continua' in result && result.continua) {
+    agendarAvancoFilaServidor()
+    return NextResponse.json({ continua: true }, { status: 202 })
+  }
+
   if (result.ok) {
     agendarAvancoFilaServidor()
     return NextResponse.json({
@@ -23,29 +28,33 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  if ('cancelled' in result) {
+  if ('cancelled' in result && result.cancelled) {
     agendarAvancoFilaServidor()
     return NextResponse.json({ cancelled: true }, { status: 200 })
   }
 
-  if (result.busy) {
-    return NextResponse.json(
-      {
-        error: result.erro,
-        busy: true,
-      },
-      { status: 409 }
-    )
+  if ('erro' in result) {
+    if (result.busy) {
+      return NextResponse.json(
+        {
+          error: result.erro,
+          busy: true,
+        },
+        { status: 409 }
+      )
+    }
+
+    if (result.notFound) {
+      return NextResponse.json({ error: result.erro }, { status: 404 })
+    }
+
+    if (result.invalidStatus) {
+      return NextResponse.json({ error: result.erro }, { status: 400 })
+    }
+
+    agendarAvancoFilaServidor()
+    return NextResponse.json({ error: result.erro }, { status: 500 })
   }
 
-  if (result.notFound) {
-    return NextResponse.json({ error: result.erro }, { status: 404 })
-  }
-
-  if (result.invalidStatus) {
-    return NextResponse.json({ error: result.erro }, { status: 400 })
-  }
-
-  agendarAvancoFilaServidor()
-  return NextResponse.json({ error: result.erro }, { status: 500 })
+  return NextResponse.json({ error: 'Resposta inesperada do processamento' }, { status: 500 })
 }

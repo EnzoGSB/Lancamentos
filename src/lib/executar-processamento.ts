@@ -1,5 +1,9 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { analisarPDF, processarSingle, processarMulti } from '@/lib/ai-lancamentos'
+import {
+  analisarPDF,
+  processarMultiEmEtapas,
+  processarSingleEmEtapas,
+} from '@/lib/ai-lancamentos'
 import { createPDFParser } from '@/lib/pdf-parse-server'
 import { contarPaginasPdf } from '@/lib/pdf-page-count'
 import { STATUS_SLOT_OCUPADO } from '@/lib/fila-processamento'
@@ -9,10 +13,19 @@ import {
   verificarProcessamentoAtivo,
 } from '@/lib/processamento-cancelado'
 import { buscarExtracaoCache, salvarExtracaoCache } from '@/lib/extracao-cache'
+import { iniciarHeartbeatProcessamento } from '@/lib/processamento-heartbeat'
+import {
+  lerProgressoExtracao,
+  progressoIncompleto,
+  serializarLancamentosAiComProgresso,
+} from '@/lib/processamento-progresso'
 import type { AnaliseIA, LancamentoAI } from '@/lib/types'
 
 const ERRO_EXTRACAO_VAZIA =
   'Nenhum lançamento extraído do PDF. Verifique se o documento contém tabela de preços/unidades.'
+
+/** Margem de segurança antes do maxDuration (5 min) da rota /api/processar. */
+const ORCAMENTO_ETAPA_MS = 4 * 60 * 1000
 
 function patchStatus<T extends Record<string, unknown>>(fields: T) {
   return { ...fields, updated_at: new Date().toISOString() }
@@ -21,7 +34,55 @@ function patchStatus<T extends Record<string, unknown>>(fields: T) {
 export type ResultadoProcessamento =
   | { ok: true; analise: AnaliseIA; lancamentos: LancamentoAI[]; fromCache?: boolean }
   | { ok: false; cancelled: true }
+  | { ok: false; continua: true }
   | { ok: false; erro: string; busy?: boolean; notFound?: boolean; invalidStatus?: boolean }
+
+async function salvarProgressoParcial(
+  processamentoId: string,
+  progresso: NonNullable<ReturnType<typeof lerProgressoExtracao>>
+) {
+  await supabaseAdmin
+    .from('processamentos_lancamentos')
+    .update(patchStatus({
+      status: 'processando',
+      lancamentos_ai: serializarLancamentosAiComProgresso(progresso),
+    }))
+    .eq('id', processamentoId)
+}
+
+async function extrairComEtapas(
+  processamentoId: string,
+  buffer: Buffer,
+  analise: AnaliseIA,
+  extractedText: string,
+  progressoSalvo: ReturnType<typeof lerProgressoExtracao>
+): Promise<{ concluido: true; lancamentos: LancamentoAI[] } | { concluido: false }> {
+  const inicioEtapa = Date.now()
+
+  const opts = {
+    progresso: progressoSalvo,
+    onFaixaConcluida: async (progresso: NonNullable<ReturnType<typeof lerProgressoExtracao>>) => {
+      await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
+      await salvarProgressoParcial(processamentoId, progresso)
+    },
+    deveEncerrarEtapa: () => Date.now() - inicioEtapa >= ORCAMENTO_ETAPA_MS,
+  }
+
+  const resultado = analise.tipo === 'single'
+    ? await processarSingleEmEtapas(buffer, analise, extractedText, opts)
+    : await processarMultiEmEtapas(buffer, analise, extractedText, opts)
+
+  if (resultado.concluido && resultado.lancamentos) {
+    return { concluido: true, lancamentos: resultado.lancamentos }
+  }
+
+  if (resultado.progresso && progressoIncompleto(resultado.progresso)) {
+    await salvarProgressoParcial(processamentoId, resultado.progresso)
+    return { concluido: false }
+  }
+
+  throw new Error('Extração interrompida sem progresso salvo.')
+}
 
 export async function executarProcessamento(processamentoId: string): Promise<ResultadoProcessamento> {
   const { data: proc, error: procError } = await supabaseAdmin
@@ -34,23 +95,28 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
     return { ok: false, erro: 'Processamento não encontrado', notFound: true }
   }
 
-  const { data: outroEmAndamento } = await supabaseAdmin
-    .from('processamentos_lancamentos')
-    .select('id, original_filename')
-    .in('status', [...STATUS_SLOT_OCUPADO])
-    .neq('id', processamentoId)
-    .limit(1)
-    .maybeSingle()
+  const progressoSalvo = lerProgressoExtracao(proc.lancamentos_ai)
+  const continuando = proc.status === 'processando' && progressoSalvo != null && progressoIncompleto(progressoSalvo)
 
-  if (outroEmAndamento) {
-    return {
-      ok: false,
-      erro: 'Aguarde o processamento anterior terminar.',
-      busy: true,
+  if (!continuando) {
+    const { data: outroEmAndamento } = await supabaseAdmin
+      .from('processamentos_lancamentos')
+      .select('id, original_filename')
+      .in('status', [...STATUS_SLOT_OCUPADO])
+      .neq('id', processamentoId)
+      .limit(1)
+      .maybeSingle()
+
+    if (outroEmAndamento) {
+      return {
+        ok: false,
+        erro: 'Aguarde o processamento anterior terminar.',
+        busy: true,
+      }
     }
   }
 
-  if (!['pendente', 'erro'].includes(proc.status)) {
+  if (!['pendente', 'erro'].includes(proc.status) && !continuando) {
     return {
       ok: false,
       erro: `Processamento não pode ser iniciado no status "${proc.status}".`,
@@ -58,10 +124,12 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
     }
   }
 
+  const pararHeartbeat = iniciarHeartbeatProcessamento(supabaseAdmin, processamentoId)
+
   try {
     await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
 
-    if (proc.content_hash) {
+    if (!continuando && proc.content_hash) {
       const cache = await buscarExtracaoCache(supabaseAdmin, proc.content_hash)
       if (cache) {
         if (cache.lancamentos.length === 0) {
@@ -89,57 +157,115 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
       }
     }
 
-    await supabaseAdmin
-      .from('processamentos_lancamentos')
-      .update(patchStatus({ status: 'extraindo', erro: null }))
-      .eq('id', processamentoId)
+    let analise: AnaliseIA
+    let extractedText: string
+    let buffer: Buffer
 
-    const { data: fileData, error: downloadError } = await supabaseAdmin.storage
-      .from('pdfs')
-      .download(proc.storage_path)
+    if (continuando) {
+      analise = proc.analise_ia as AnaliseIA
+      if (!analise?.tipo) {
+        throw new Error('Retomada impossível: análise do PDF ausente. Use "Tentar novamente" do zero.')
+      }
 
-    if (downloadError || !fileData) {
-      throw new Error(`Erro ao baixar PDF: ${downloadError?.message}`)
+      const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+        .from('pdfs')
+        .download(proc.storage_path)
+
+      if (downloadError || !fileData) {
+        throw new Error(`Erro ao baixar PDF: ${downloadError?.message}`)
+      }
+
+      buffer = Buffer.from(await fileData.arrayBuffer())
+      const parser = createPDFParser(buffer)
+      const textResult = await parser.getText()
+      extractedText = textResult.text
+    } else {
+      const progressoRetomada = lerProgressoExtracao(proc.lancamentos_ai)
+      const analiseSalva = proc.analise_ia as AnaliseIA | null
+      const podeRetomar =
+        progressoRetomada != null
+        && progressoIncompleto(progressoRetomada)
+        && analiseSalva?.tipo
+
+      const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+        .from('pdfs')
+        .download(proc.storage_path)
+
+      if (downloadError || !fileData) {
+        throw new Error(`Erro ao baixar PDF: ${downloadError?.message}`)
+      }
+
+      buffer = Buffer.from(await fileData.arrayBuffer())
+
+      const parser = createPDFParser(buffer)
+      const textResult = await parser.getText()
+      extractedText = textResult.text
+
+      if (podeRetomar) {
+        analise = analiseSalva!
+        await supabaseAdmin
+          .from('processamentos_lancamentos')
+          .update(patchStatus({ status: 'processando', erro: null }))
+          .eq('id', processamentoId)
+      } else {
+        await supabaseAdmin
+          .from('processamentos_lancamentos')
+          .update(patchStatus({ status: 'extraindo', erro: null, lancamentos_ai: null }))
+          .eq('id', processamentoId)
+
+        if (proc.page_count == null) {
+          const pageCount = await contarPaginasPdf(buffer)
+          await supabaseAdmin
+            .from('processamentos_lancamentos')
+            .update(patchStatus({ page_count: pageCount }))
+            .eq('id', processamentoId)
+        }
+
+        if (!extractedText || extractedText.trim().length < 50) {
+          throw new Error('Texto extraído do PDF está vazio ou muito curto. O PDF pode ser escaneado ou protegido.')
+        }
+
+        await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
+
+        await supabaseAdmin
+          .from('processamentos_lancamentos')
+          .update(patchStatus({ status: 'analisando' }))
+          .eq('id', processamentoId)
+
+        analise = await analisarPDF(extractedText, proc.original_filename || '', buffer)
+
+        await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
+
+        await supabaseAdmin
+          .from('processamentos_lancamentos')
+          .update(patchStatus({ status: 'processando', tipo: analise.tipo, analise_ia: analise }))
+          .eq('id', processamentoId)
+      }
     }
 
-    const arrayBuffer = await fileData.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
+    const progressoParaExtracao = continuando
+      ? progressoSalvo
+      : lerProgressoExtracao(
+        (await supabaseAdmin
+          .from('processamentos_lancamentos')
+          .select('lancamentos_ai')
+          .eq('id', processamentoId)
+          .single()).data?.lancamentos_ai
+      ) ?? progressoSalvo
 
-    if (proc.page_count == null) {
-      const pageCount = await contarPaginasPdf(buffer)
-      await supabaseAdmin
-        .from('processamentos_lancamentos')
-        .update(patchStatus({ page_count: pageCount }))
-        .eq('id', processamentoId)
+    const extracao = await extrairComEtapas(
+      processamentoId,
+      buffer,
+      analise,
+      extractedText,
+      progressoParaExtracao
+    )
+
+    if (!extracao.concluido) {
+      return { ok: false, continua: true }
     }
 
-    const parser = createPDFParser(buffer)
-    const textResult = await parser.getText()
-    const extractedText: string = textResult.text
-
-    if (!extractedText || extractedText.trim().length < 50) {
-      throw new Error('Texto extraído do PDF está vazio ou muito curto. O PDF pode ser escaneado ou protegido.')
-    }
-
-    await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
-
-    await supabaseAdmin
-      .from('processamentos_lancamentos')
-      .update(patchStatus({ status: 'analisando' }))
-      .eq('id', processamentoId)
-
-    const analise = await analisarPDF(extractedText, proc.original_filename || '', buffer)
-
-    await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
-
-    await supabaseAdmin
-      .from('processamentos_lancamentos')
-      .update(patchStatus({ status: 'processando', tipo: analise.tipo, analise_ia: analise }))
-      .eq('id', processamentoId)
-
-    const lancamentos: LancamentoAI[] = analise.tipo === 'single'
-      ? await processarSingle(buffer, analise, extractedText)
-      : await processarMulti(buffer, analise, extractedText)
+    const lancamentos = extracao.lancamentos
 
     if (lancamentos.length === 0) {
       throw new Error(ERRO_EXTRACAO_VAZIA)
@@ -167,11 +293,46 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
     }
 
     const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido'
+
+    const { data: rowAtual } = await supabaseAdmin
+      .from('processamentos_lancamentos')
+      .select('lancamentos_ai')
+      .eq('id', processamentoId)
+      .single()
+
+    const progressoAtual = lerProgressoExtracao(rowAtual?.lancamentos_ai)
+
     await supabaseAdmin
       .from('processamentos_lancamentos')
-      .update(patchStatus({ status: 'erro', erro: errorMessage }))
+      .update(patchStatus({
+        status: 'erro',
+        erro: errorMessage,
+        ...(progressoAtual && progressoIncompleto(progressoAtual)
+          ? { lancamentos_ai: serializarLancamentosAiComProgresso(progressoAtual) }
+          : {}),
+      }))
       .eq('id', processamentoId)
 
     return { ok: false, erro: errorMessage }
+  } finally {
+    pararHeartbeat()
   }
+}
+
+export async function obterIdProcessamentoParaContinuar(): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('processamentos_lancamentos')
+    .select('id, lancamentos_ai')
+    .eq('status', 'processando')
+    .order('updated_at', { ascending: true })
+    .limit(5)
+
+  if (error || !data?.length) return null
+
+  for (const row of data) {
+    const p = lerProgressoExtracao(row.lancamentos_ai)
+    if (p && progressoIncompleto(p)) return row.id
+  }
+
+  return null
 }

@@ -5,6 +5,7 @@ import { createPDFParser } from './pdf-parse-server'
 import type { AnaliseIA, LancamentoAI } from './types'
 import { normalizarLancamentos } from './formatar-lancamento'
 import { lerConcorrenciaFaixas } from './extracao-concorrencia'
+import type { ProgressoExtracao } from './processamento-progresso'
 
 const AI_TEMPERATURE = 0
 const MAX_TENTATIVAS_EXTRACAO = 3
@@ -17,34 +18,123 @@ function numFaixasPorDocumento(totalPaginas: number, empreendimentosHint: number
   return 3
 }
 
+export type OpcoesExtracaoEtapa = {
+  progresso?: ProgressoExtracao | null
+  onFaixaConcluida?: (progresso: ProgressoExtracao) => Promise<void>
+  deveEncerrarEtapa?: () => boolean
+}
+
+export type ResultadoExtracaoEtapa = {
+  concluido: boolean
+  progresso: ProgressoExtracao | null
+  lancamentos?: LancamentoAI[]
+}
+
+type ExtracaoFaixasInterno = {
+  flat: LancamentoAI[]
+  progresso: ProgressoExtracao
+  concluido: boolean
+}
+
 async function extrairFaixasComCobertura<T>(
   items: T[],
-  extractFn: (item: T, index: number) => Promise<LancamentoAI[]>
-): Promise<LancamentoAI[]> {
-  if (items.length === 0) return []
+  extractFn: (item: T, index: number) => Promise<LancamentoAI[]>,
+  opts?: OpcoesExtracaoEtapa & { modo: ProgressoExtracao['modo'] }
+): Promise<ExtracaoFaixasInterno> {
+  if (items.length === 0) {
+    return {
+      flat: [],
+      progresso: opts?.progresso ?? {
+        proximaFaixa: 0,
+        totalFaixas: 0,
+        resultadosPorFaixa: [],
+        modo: opts?.modo ?? 'multi',
+      },
+      concluido: true,
+    }
+  }
 
-  const results: LancamentoAI[][] = new Array(items.length)
+  const progresso = opts?.progresso ?? {
+    proximaFaixa: 0,
+    totalFaixas: items.length,
+    resultadosPorFaixa: Array.from({ length: items.length }, () => [] as LancamentoAI[]),
+    modo: opts!.modo,
+  }
 
-  await mapWithConcurrency(items, lerConcorrenciaFaixas(), async (item, i) => {
-    results[i] = await extractFn(item, i)
-  })
+  if (progresso.totalFaixas !== items.length) {
+    progresso.totalFaixas = items.length
+    if (progresso.resultadosPorFaixa.length < items.length) {
+      while (progresso.resultadosPorFaixa.length < items.length) {
+        progresso.resultadosPorFaixa.push([])
+      }
+    }
+  }
 
-  const indicesVazios = results
+  const emEtapa = Boolean(opts?.deveEncerrarEtapa)
+
+  if (!emEtapa) {
+    const results: LancamentoAI[][] = new Array(items.length)
+
+    await mapWithConcurrency(items, lerConcorrenciaFaixas(), async (item, i) => {
+      results[i] = await extractFn(item, i)
+    })
+
+    const indicesVazios = results
+      .map((r, i) => (r.length === 0 ? i : -1))
+      .filter(i => i >= 0)
+
+    for (const i of indicesVazios) {
+      results[i] = await extractFn(items[i], i)
+    }
+
+    const aindaVazios = indicesVazios.filter(i => results[i].length === 0)
+    if (aindaVazios.length > 0 && aindaVazios.length / items.length > MAX_FAIXAS_VAZIAS_RATIO) {
+      throw new Error(
+        `Extração incompleta: ${aindaVazios.length} de ${items.length} faixas sem dados. Use "Processar com IA" novamente nesta tela.`
+      )
+    }
+
+    progresso.resultadosPorFaixa = results
+    progresso.proximaFaixa = items.length
+    return { flat: results.flat(), progresso, concluido: true }
+  }
+
+  for (let i = progresso.proximaFaixa; i < items.length; i++) {
+    if (opts?.deveEncerrarEtapa?.()) {
+      progresso.proximaFaixa = i
+      return {
+        flat: progresso.resultadosPorFaixa.flat(),
+        progresso,
+        concluido: false,
+      }
+    }
+
+    progresso.resultadosPorFaixa[i] = await extractFn(items[i], i)
+    progresso.proximaFaixa = i + 1
+    await opts?.onFaixaConcluida?.(progresso)
+  }
+
+  const indicesVazios = progresso.resultadosPorFaixa
     .map((r, i) => (r.length === 0 ? i : -1))
     .filter(i => i >= 0)
 
   for (const i of indicesVazios) {
-    results[i] = await extractFn(items[i], i)
+    progresso.resultadosPorFaixa[i] = await extractFn(items[i], i)
   }
 
-  const aindaVazios = indicesVazios.filter(i => results[i].length === 0)
+  const aindaVazios = indicesVazios.filter(i => progresso.resultadosPorFaixa[i].length === 0)
   if (aindaVazios.length > 0 && aindaVazios.length / items.length > MAX_FAIXAS_VAZIAS_RATIO) {
     throw new Error(
       `Extração incompleta: ${aindaVazios.length} de ${items.length} faixas sem dados. Use "Processar com IA" novamente nesta tela.`
     )
   }
 
-  return results.flat()
+  progresso.proximaFaixa = items.length
+  return {
+    flat: progresso.resultadosPorFaixa.flat(),
+    progresso,
+    concluido: true,
+  }
 }
 
 const LANCAMENTO_SCHEMA = `{
@@ -320,7 +410,12 @@ function alinharConstrutoraComAnalise(lancamentos: LancamentoAI[], analise: Anal
 // SINGLE: um empreendimento, tipologias em várias páginas (ex: Metropolitan).
 // PDFs com 3+ páginas → renderiza + tiling (mesma técnica do multi) para não perder
 // páginas densas de preço (ex: 9–14). PDFs curtos → PDF inteiro numa chamada.
-export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoNativo = ''): Promise<LancamentoAI[]> {
+export async function processarSingleEmEtapas(
+  buffer: Buffer,
+  analise: AnaliseIA,
+  textoNativo = '',
+  opts?: OpcoesExtracaoEtapa
+): Promise<ResultadoExtracaoEtapa> {
   const contextoBase = [
     `Construtora: ${analise.construtora}`,
     `Empreendimento: ${analise.empreendimentos_identificados[0] ?? 'identifique no PDF'}`,
@@ -335,10 +430,14 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoN
   if (paginas.length <= 2) {
     const pdfBase64 = buffer.toString('base64')
     const result = await _extrairDePdf(SYSTEM_PROMPT_SINGLE, pdfBase64, contextoBase, textoNativo)
-    return alinharConstrutoraComAnalise(
-      normalizarLancamentos(deduplicar(result), textoNativo),
-      analise
-    )
+    return {
+      concluido: true,
+      progresso: null,
+      lancamentos: alinharConstrutoraComAnalise(
+        normalizarLancamentos(deduplicar(result), textoNativo),
+        analise
+      ),
+    }
   }
 
   const totalPaginas = paginas.length
@@ -353,22 +452,59 @@ export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoN
   )
   const jobs: FaixaJob[] = faixasPorPagina.flat()
 
-  const bruto = await extrairFaixasComCobertura(jobs, async ({ png, pagina }) => {
-    const contexto = `${contextoBase}\nPágina ${pagina} de ${totalPaginas}. Extraia todos os blocos de tipologia visíveis nesta faixa — inclusive tabelas de PREÇO DE VENDA por andar.`
-    return _extrairDeImagem(SYSTEM_PROMPT_SINGLE_FAIXA, png, contexto, textoNativo)
-  })
+  const progressoInicial =
+    opts?.progresso?.modo === 'single_tiling' ? opts.progresso : null
 
-  return alinharConstrutoraComAnalise(
-    normalizarLancamentos(deduplicar(bruto), textoNativo),
-    analise
+  const { flat, progresso, concluido } = await extrairFaixasComCobertura(
+    jobs,
+    async ({ png, pagina }) => {
+      const contexto = `${contextoBase}\nPágina ${pagina} de ${totalPaginas}. Extraia todos os blocos de tipologia visíveis nesta faixa — inclusive tabelas de PREÇO DE VENDA por andar.`
+      return _extrairDeImagem(SYSTEM_PROMPT_SINGLE_FAIXA, png, contexto, textoNativo)
+    },
+    {
+      ...opts,
+      modo: 'single_tiling',
+      progresso: progressoInicial ?? {
+        proximaFaixa: 0,
+        totalFaixas: jobs.length,
+        resultadosPorFaixa: Array.from({ length: jobs.length }, () => []),
+        modo: 'single_tiling',
+      },
+    }
   )
+
+  if (!concluido) {
+    return { concluido: false, progresso }
+  }
+
+  return {
+    concluido: true,
+    progresso: null,
+    lancamentos: alinharConstrutoraComAnalise(
+      normalizarLancamentos(deduplicar(flat), textoNativo),
+      analise
+    ),
+  }
+}
+
+export async function processarSingle(buffer: Buffer, analise: AnaliseIA, textoNativo = ''): Promise<LancamentoAI[]> {
+  const resultado = await processarSingleEmEtapas(buffer, analise, textoNativo)
+  if (!resultado.concluido || !resultado.lancamentos) {
+    throw new Error('Extração interrompida antes de concluir.')
+  }
+  return resultado.lancamentos
 }
 
 // MULTI: tabelas densas e hierárquicas → renderiza cada página em alta resolução,
 // corta em faixas horizontais (tiling) e processa cada faixa. Tiling dá mais
 // resolução por linha e reduz erros de associação. Envia também o texto nativo
 // (nomes/valores exatos) para evitar alucinação.
-export async function processarMulti(buffer: Buffer, analise: AnaliseIA, textoNativo = ''): Promise<LancamentoAI[]> {
+export async function processarMultiEmEtapas(
+  buffer: Buffer,
+  analise: AnaliseIA,
+  textoNativo = '',
+  opts?: OpcoesExtracaoEtapa
+): Promise<ResultadoExtracaoEtapa> {
   const paginas = await renderizarPaginas(buffer)
   const listaEmpreendimentos = analise.empreendimentos_identificados?.length
     ? analise.empreendimentos_identificados.join(', ')
@@ -386,14 +522,43 @@ export async function processarMulti(buffer: Buffer, analise: AnaliseIA, textoNa
   const faixasPorPagina = await Promise.all(paginas.map(png => cortarEmFaixas(png, numFaixas)))
   const todasFaixas = faixasPorPagina.flat()
 
-  const bruto = await extrairFaixasComCobertura(todasFaixas, faixa =>
-    _extrairDeImagem(SYSTEM_PROMPT_MULTI, faixa, contexto, textoNativo)
+  const progressoInicial = opts?.progresso?.modo === 'multi' ? opts.progresso : null
+
+  const { flat, progresso, concluido } = await extrairFaixasComCobertura(
+    todasFaixas,
+    faixa => _extrairDeImagem(SYSTEM_PROMPT_MULTI, faixa, contexto, textoNativo),
+    {
+      ...opts,
+      modo: 'multi',
+      progresso: progressoInicial ?? {
+        proximaFaixa: 0,
+        totalFaixas: todasFaixas.length,
+        resultadosPorFaixa: Array.from({ length: todasFaixas.length }, () => []),
+        modo: 'multi',
+      },
+    }
   )
 
-  return alinharConstrutoraComAnalise(
-    normalizarLancamentos(deduplicar(bruto), textoNativo),
-    analise
-  )
+  if (!concluido) {
+    return { concluido: false, progresso }
+  }
+
+  return {
+    concluido: true,
+    progresso: null,
+    lancamentos: alinharConstrutoraComAnalise(
+      normalizarLancamentos(deduplicar(flat), textoNativo),
+      analise
+    ),
+  }
+}
+
+export async function processarMulti(buffer: Buffer, analise: AnaliseIA, textoNativo = ''): Promise<LancamentoAI[]> {
+  const resultado = await processarMultiEmEtapas(buffer, analise, textoNativo)
+  if (!resultado.concluido || !resultado.lancamentos) {
+    throw new Error('Extração interrompida antes de concluir.')
+  }
+  return resultado.lancamentos
 }
 
 async function mapWithConcurrency<T, R>(

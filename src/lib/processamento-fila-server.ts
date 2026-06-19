@@ -1,10 +1,21 @@
 import { after } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { STATUS_PROCESSAMENTO_OCUPADO } from '@/lib/fila-processamento'
-import { executarProcessamento } from '@/lib/executar-processamento'
+import {
+  executarProcessamento,
+  obterIdProcessamentoParaContinuar,
+} from '@/lib/executar-processamento'
+import {
+  lerProgressoExtracao,
+  progressoIncompleto,
+  serializarLancamentosAiComProgresso,
+} from '@/lib/processamento-progresso'
 
-/** Tempo sem atualização para considerar processamento abandonado (timeout Vercel, crash, etc.). */
-const FANTASMA_MS = 20 * 60 * 1000
+/** Sem heartbeat por este tempo → processamento abandonado (não reenfileira sozinho). */
+const FANTASMA_MS = 3 * 60 * 60 * 1000
+
+const MSG_FANTASMA =
+  'Processamento interrompido (servidor ou timeout). Clique em "Tentar novamente" para continuar de onde parou.'
 
 function timestampReferencia(updatedAt: string | null | undefined, createdAt: string | null | undefined): number {
   const raw = updatedAt ?? createdAt
@@ -22,28 +33,32 @@ export async function limparCanceladosOrfaos(): Promise<void> {
 export async function recuperarProcessamentosFantasma(): Promise<number> {
   const { data: emProgresso, error } = await supabaseAdmin
     .from('processamentos_lancamentos')
-    .select('id, updated_at, created_at')
+    .select('id, updated_at, created_at, lancamentos_ai')
     .in('status', [...STATUS_PROCESSAMENTO_OCUPADO])
 
   if (error || !emProgresso?.length) return 0
 
   const limite = Date.now() - FANTASMA_MS
-  const ids = emProgresso
-    .filter(p => timestampReferencia(p.updated_at, p.created_at) < limite)
-    .map(p => p.id)
+  const stale = emProgresso.filter(p => timestampReferencia(p.updated_at, p.created_at) < limite)
 
-  if (ids.length === 0) return 0
+  if (stale.length === 0) return 0
 
-  await supabaseAdmin
-    .from('processamentos_lancamentos')
-    .update({
-      status: 'pendente',
-      erro: null,
-      updated_at: new Date().toISOString(),
-    })
-    .in('id', ids)
+  for (const row of stale) {
+    const progresso = lerProgressoExtracao(row.lancamentos_ai)
+    await supabaseAdmin
+      .from('processamentos_lancamentos')
+      .update({
+        status: 'erro',
+        erro: MSG_FANTASMA,
+        updated_at: new Date().toISOString(),
+        ...(progresso && progressoIncompleto(progresso)
+          ? { lancamentos_ai: serializarLancamentosAiComProgresso(progresso) }
+          : {}),
+      })
+      .eq('id', row.id)
+  }
 
-  return ids.length
+  return stale.length
 }
 
 export async function prepararFila(): Promise<void> {
@@ -51,15 +66,19 @@ export async function prepararFila(): Promise<void> {
   await recuperarProcessamentosFantasma()
 }
 
-export async function haProcessamentoAtivoNoBanco(): Promise<boolean> {
+export async function haProcessamentoAtivoSemRetomada(): Promise<boolean> {
   const { data } = await supabaseAdmin
     .from('processamentos_lancamentos')
-    .select('id')
+    .select('id, lancamentos_ai')
     .in('status', [...STATUS_PROCESSAMENTO_OCUPADO])
-    .limit(1)
-    .maybeSingle()
+    .limit(5)
 
-  return data != null
+  if (!data?.length) return false
+
+  return data.some(row => {
+    const p = lerProgressoExtracao(row.lancamentos_ai)
+    return !p || !progressoIncompleto(p)
+  })
 }
 
 export async function obterProximoPendenteId(): Promise<string | null> {
@@ -86,11 +105,26 @@ export async function temPendenteNoBanco(): Promise<boolean> {
   return data != null
 }
 
-/** Processa um PDF da fila no servidor; em erro ou sucesso, encadeia o próximo se houver. */
+/** Processa um PDF da fila no servidor; encadeia etapas ou o próximo da fila. */
 export async function avancarFilaServidor(): Promise<void> {
   await prepararFila()
 
-  if (await haProcessamentoAtivoNoBanco()) return
+  const continuarId = await obterIdProcessamentoParaContinuar()
+  if (continuarId) {
+    const result = await executarProcessamento(continuarId)
+    if ('continua' in result && result.continua) {
+      agendarAvancoFilaServidor()
+      return
+    }
+    if (await temPendenteNoBanco()) {
+      agendarAvancoFilaServidor()
+    } else if (await obterIdProcessamentoParaContinuar()) {
+      agendarAvancoFilaServidor()
+    }
+    return
+  }
+
+  if (await haProcessamentoAtivoSemRetomada()) return
 
   const proximoId = await obterProximoPendenteId()
   if (!proximoId) return
@@ -99,17 +133,15 @@ export async function avancarFilaServidor(): Promise<void> {
 
   if (!result.ok && 'busy' in result && result.busy) return
 
-  const deveContinuar =
-    result.ok
-    || ('cancelled' in result)
-    || ('erro' in result && !!result.erro && !result.notFound && !result.invalidStatus)
-
-  if (!deveContinuar) return
+  if ('continua' in result && result.continua) {
+    agendarAvancoFilaServidor()
+    return
+  }
 
   if (await temPendenteNoBanco()) {
-    if (!(await haProcessamentoAtivoNoBanco())) {
-      agendarAvancoFilaServidor()
-    }
+    agendarAvancoFilaServidor()
+  } else if (await obterIdProcessamentoParaContinuar()) {
+    agendarAvancoFilaServidor()
   }
 }
 
