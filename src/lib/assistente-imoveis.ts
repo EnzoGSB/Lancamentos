@@ -165,9 +165,6 @@ function limparFiltros(raw: Record<string, unknown>): FiltrosInterpretados {
   const tipo = raw.tipo_imovel
   if (tipo === 'apartamento' || tipo === 'studio') {
     filtros.tipo_imovel = tipo
-    if (tipo === 'apartamento' && (filtros.dormitorios_min == null || filtros.dormitorios_min < 2)) {
-      filtros.dormitorios_min = 2
-    }
   }
 
   if (raw.entrega_pronta === true) {
@@ -285,8 +282,8 @@ A busca não deve ser excessivamente rígida, mas também não traga imóveis se
 - Se não houver imóvel na faixa (nem com ±5%), a busca retorna vazio — nunca ignore a metragem pedida.
 
 ## Apartamento vs Studio (regra do catálogo)
-- **Apartamento** (apê, apartamento, aparta): imóvel com **2 quartos/dormitórios ou mais**. Use tipo_imovel: "apartamento" e dormitorios_min: 2 (ou mais se o usuário pedir).
-- **Studio**: imóvel com **0 ou 1 quarto/dormitório**, ou tipologia "Studio". Use tipo_imovel: "studio".
+- **Apartamento** (apê, apartamento, aparta): use tipo_imovel: "apartamento". Pode ter 1 ou mais quartos — só preencha dormitorios_min/max se o usuário citar quantidade.
+- **Studio**: tipologia explícita "Studio" ou pedido explícito de studio. Use tipo_imovel: "studio". Apartamento de 1 dormitório **não** é studio.
 - **Laje / sala comercial / corporativa**: tipologia comercial — use termos: ["laje"] ou q: "laje corporativa". **Não** use tipo_imovel apartamento/studio nem dormitorios_min.
 - "unidade" ou "imóvel" genérico **sem** especificar apartamento/studio/laje → não use tipo_imovel.
 
@@ -307,8 +304,8 @@ Quando critérios forem obrigatórios juntos (sem "ou"), use os campos diretos (
 
 ## Termos equivalentes
 - m², metros, metros quadrados, metragem, m → metragem
-- apê, apartamento, aparta → tipo_imovel: "apartamento" (2+ quartos)
-- studio → tipo_imovel: "studio"
+- apê, apartamento, aparta → tipo_imovel: "apartamento" (qualquer quantidade de quartos, se citada)
+- studio → tipo_imovel: "studio" (tipologia Studio ou pedido explícito)
 - unidade, imóvel → busca genérica (sem tipo_imovel, salvo contexto)
 - suíte, suites, suítes → suites_min / suites_max (exato por padrão)
 - dorm, dormitório, quarto, quartos → dormitorios_min / dormitorios_max (exato por padrão)

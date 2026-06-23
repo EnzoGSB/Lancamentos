@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Search, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Search, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -60,6 +60,13 @@ const FILTROS_VAZIOS: Filtros = {
 
 const PAGE_SIZE = 10
 
+function paginasParaExibir(pagina: number, total: number): (number | 'ellipsis')[] {
+  if (total <= 1) return []
+  if (total === 2) return [1, 2]
+  if (pagina <= 1 || pagina >= total) return [1, 'ellipsis', total]
+  return [1, 'ellipsis', pagina, 'ellipsis', total]
+}
+
 function PaginacaoImoveis({
   pagina,
   totalPaginas,
@@ -71,25 +78,61 @@ function PaginacaoImoveis({
 }) {
   if (totalPaginas <= 1) return null
 
+  const itens = paginasParaExibir(pagina, totalPaginas)
+
   return (
     <nav
-      className="flex flex-wrap items-center justify-center gap-1.5 p-4 border-t border-gray-100"
+      className="flex flex-nowrap items-center justify-center gap-1.5 p-4 border-t border-gray-100"
       aria-label="Paginação de imóveis"
     >
-      {Array.from({ length: totalPaginas }, (_, i) => i + 1).map(n => (
-        <Button
-          key={n}
-          type="button"
-          variant={n === pagina ? 'default' : 'outline'}
-          size="sm"
-          className="min-w-9 touch-manipulation"
-          onClick={() => onPagina(n)}
-          aria-current={n === pagina ? 'page' : undefined}
-          aria-label={`Página ${n}`}
-        >
-          {n}
-        </Button>
-      ))}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="min-w-9 touch-manipulation"
+        onClick={() => onPagina(pagina - 1)}
+        disabled={pagina <= 1}
+        aria-label="Página anterior"
+      >
+        <ChevronLeft className="size-4" />
+      </Button>
+
+      {itens.map((item, i) =>
+        item === 'ellipsis' ? (
+          <span
+            key={`ellipsis-${i}`}
+            className="min-w-9 px-1 text-center text-sm text-gray-400 select-none"
+            aria-hidden
+          >
+            …
+          </span>
+        ) : (
+          <Button
+            key={item}
+            type="button"
+            variant={item === pagina ? 'default' : 'outline'}
+            size="sm"
+            className="min-w-9 touch-manipulation"
+            onClick={() => onPagina(item)}
+            aria-current={item === pagina ? 'page' : undefined}
+            aria-label={`Página ${item}`}
+          >
+            {item}
+          </Button>
+        )
+      )}
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="min-w-9 touch-manipulation"
+        onClick={() => onPagina(pagina + 1)}
+        disabled={pagina >= totalPaginas}
+        aria-label="Próxima página"
+      >
+        <ChevronRight className="size-4" />
+      </Button>
     </nav>
   )
 }

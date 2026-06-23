@@ -1,0 +1,289 @@
+================================================================================
+IA DE BUSCA DE IMÓVEIS — COMANDOS E INSTRUÇÕES
+================================================================================
+Fonte: src/lib/assistente-imoveis.ts
+API:   POST /api/lancamentos/assistente
+Modelo: gpt-4o-mini (src/lib/openai-busca.ts)
+Chave:  OPENAI_API_KEY_BUSCA (ou OPENAI_API_KEY como fallback)
+
+================================================================================
+1. COMO FUNCIONA
+================================================================================
+
+A IA NÃO usa function-calling nem comandos slash (/buscar, etc.).
+
+Fluxo:
+  1. Usuário envia mensagem em linguagem natural
+  2. IA interpreta e retorna JSON: { resposta, filtros }
+  3. Código aplica heurísticas pós-IA (bairro, entrega, comercial, etc.)
+  4. buscarLancamentos() consulta o banco com os filtros estruturados
+
+Parâmetros da chamada OpenAI:
+  - temperature: 0.2
+  - max_tokens: 800
+  - response_format: json_object
+  - histórico: últimas 4 mensagens do chat
+  - catálogo enviado na 1ª mensagem user: construtoras, bairros, tipologias,
+    empreendimentos, entregas, descontos (para casar nomes exatos)
+
+================================================================================
+2. CAMPOS DE FILTRO (JSON retornado pela IA)
+================================================================================
+
+TEXTO / LISTAS
+  q                 — busca livre genérica
+  termos            — array de termos (ex.: ["duplex"], ["laje"])
+  construtora       — array de nomes
+  empreendimento    — array de nomes
+  bairro            — array (nome EXATO do catálogo)
+  tipologia         — array
+  unidade           — array (ex.: ["241"], ["501"])
+  andar             — array (ex.: ["12"])
+  desconto_contem   — array (ex.: ["10%"])
+
+NUMÉRICOS
+  valor_min         — preço mínimo em reais (ex.: 1000000)
+  valor_max         — preço máximo em reais (ex.: 600000)
+  metragem_min      — m² (tolerância ±5% no backend)
+  metragem_max      — m² (tolerância ±5% no backend)
+  dormitorios_min
+  dormitorios_max
+  suites_min
+  suites_max
+  vagas_min
+
+TIPO DE IMÓVEL
+  tipo_imovel       — "apartamento" | "studio"
+
+ENTREGA / DATAS
+  entrega_pronta    — true (pronto para morar, sem prazo)
+  entrega_mes       — 1–12
+  entrega_ano       — ex.: 2027
+  entrega_ate_mes
+  entrega_ate_ano
+  entrega_de_mes
+  entrega_de_ano
+  entrega_contem    — texto literal do catálogo (ex.: ["Mai/2027"])
+
+LÓGICA OR (alternativas)
+  condicoes_or      — array de condições; imóvel atende UMA delas
+                      Campos por item: suites_min, suites_max,
+                      dormitorios_min, dormitorios_max,
+                      exige_duplex, tipologia_contem
+
+RESPOSTA AO USUÁRIO
+  resposta          — 1–2 frases em português descrevendo os critérios
+                      (sem inventar resultados)
+
+================================================================================
+3. REGRAS DO PROMPT (INSTRUÇÕES PARA A IA)
+================================================================================
+
+PAPEL
+  - Interpretar pedidos em linguagem natural
+  - NUNCA inventar imóveis, valores, metragens, bairros ou empreendimentos
+  - Trabalhar só com critérios derivados do pedido do usuário
+  - Busca não excessivamente rígida, mas sem trazer imóveis sem relação
+
+CAMPOS DO CATÁLOGO (colunas da tabela)
+  construtora, empreendimento, bairro, data_entrega, tipologia, unidade,
+  andar, metragem, vagas, valor_minimo, valor_maximo, desconto_margem
+  Busca genérica (q/termos) percorre todos esses campos.
+
+--------------------------------------------------------------------------------
+METRAGEM (valores em m², sem sufixo)
+--------------------------------------------------------------------------------
+  "Entre 21 e 28 metros"     → metragem_min: 21, metragem_max: 28
+                               (sistema aceita no máximo ±5% fora da faixa)
+  "88 metros quadrados"      → metragem_min: 88, metragem_max: 88
+                               (aceita ~83,6–92,4 m²)
+  "Até 70 metros"            → metragem_max: 70
+  "A partir de 100 metros"   → metragem_min: 100
+  "De 40 a 50 metros"        → metragem_min: 40, metragem_max: 50
+  Se não houver imóvel na faixa (nem com ±5%), retorna vazio — nunca ignorar.
+
+--------------------------------------------------------------------------------
+APARTAMENTO vs STUDIO vs LAJE
+--------------------------------------------------------------------------------
+  Apartamento (apê, apartamento, aparta):
+    → tipo_imovel: "apartamento"
+    → pode ter 1 ou mais quartos; dormitorios_min/max só se o usuário citar quantidade
+
+  Studio:
+    → tipo_imovel: "studio"
+    → tipologia explícita "Studio" ou pedido explícito (apartamento de 1 dorm não é studio)
+
+  Laje / sala comercial / corporativa:
+    → termos: ["laje"] ou q: "laje corporativa"
+    → NÃO usar tipo_imovel apartamento/studio nem dormitorios_min
+
+  "unidade" ou "imóvel" genérico sem especificar tipo:
+    → não usar tipo_imovel
+
+--------------------------------------------------------------------------------
+DORMITÓRIOS, SUÍTES — EXATO vs MÍNIMO
+--------------------------------------------------------------------------------
+  Sem "no mínimo" / "a partir de" / "pelo menos":
+    → contagem EXATA (dormitorios_min E dormitorios_max iguais;
+                       idem suites_min/suites_max)
+    Ex.: "3 quartos" → dormitorios_min: 3, dormitorios_max: 3
+
+  Com "a partir de" / "pelo menos" / "no mínimo":
+    → só o campo _min (sem _max)
+    Ex.: "a partir de 3 quartos" → dormitorios_min: 3
+
+  Com "ou" entre alternativas → condicoes_or:
+    Ex.: "3 suítes ou duplex com 2 suítes"
+    → condicoes_or: [
+         { suites_min: 3, suites_max: 3 },
+         { suites_min: 2, suites_max: 2, exige_duplex: true }
+       ]
+
+  Critérios obrigatórios juntos (sem "ou"):
+    → campos diretos (suites_min/max, dormitorios_min/max, vagas_min, etc.)
+
+--------------------------------------------------------------------------------
+TERMOS EQUIVALENTES
+--------------------------------------------------------------------------------
+  m², metros, metros quadrados, metragem, m  → metragem
+  apê, apartamento, aparta                  → tipo_imovel: "apartamento"
+  studio                                    → tipo_imovel: "studio" (tipologia explícita)
+  unidade, imóvel                           → busca genérica (sem tipo_imovel)
+  suíte, suites, suítes                     → suites_min / suites_max (exato)
+  dorm, dormitório, quarto, quartos         → dormitorios_min / max (exato)
+  vaga, vagas, garagem                      → vagas_min
+  duplex                                    → termos: ["duplex"] ou exige_duplex
+  laje, laje corporativa, sala comercial    → termos: ["laje"]
+                                              (corrige "coorporativa")
+
+--------------------------------------------------------------------------------
+BUSCA POR REFERÊNCIA PARCIAL
+--------------------------------------------------------------------------------
+  duplex, studio, cobertura → termos: ["duplex"], etc.
+  Busca em: tipologia, empreendimento, unidade, andar, desconto e demais campos.
+
+--------------------------------------------------------------------------------
+UNIDADE, ANDAR E DESCONTO
+--------------------------------------------------------------------------------
+  "unidade 241", "apto 501"     → unidade: ["241"] ou ["501"]
+  "12º andar", "cobertura"      → andar: ["12"] ou termos: ["cobertura"]
+  Andar vazio no cadastro       → inferência pelo código da unidade
+                                  (124/121 → 12º; 21/23 → 2º; 1201 → 12º)
+  "com desconto", "desconto 10%" → desconto_contem: ["10%"] ou termos: ["desconto"]
+
+--------------------------------------------------------------------------------
+VALOR (preço)
+--------------------------------------------------------------------------------
+  "até 600 mil"                  → valor_max: 600000
+  "até 2 milhões" / "até 2M"     → valor_max: 2000000
+  "a partir de 1 milhão"         → valor_min: 1000000
+  "entre 500 mil e 800 mil"      → valor_min: 500000, valor_max: 800000
+
+--------------------------------------------------------------------------------
+BAIRRO E CATÁLOGO
+--------------------------------------------------------------------------------
+  - Usar campo bairro com nome EXATO do catálogo
+  - Não confundir bairros parecidos (Vila Madalena ≠ Vila Mariana)
+  - Não usar casamento aproximado entre bairros distintos
+    (sistema tolera typo de 1 letra ou diferença de acento)
+  - Não usar termos: ["vila"] ou fragmentos soltos para localização
+  - Bairro inexistente no catálogo: não substituir por similar;
+    usar q com a frase completa do bairro pedido
+
+--------------------------------------------------------------------------------
+ENTREGA / IMÓVEL PRONTO / DATAS
+--------------------------------------------------------------------------------
+  Formatos no catálogo: "Pronto", "Mai/2027", "Out/2028", "06/2026"
+
+  "pronto", "prontos para morar", "entrega imediata" (sem prazo)
+    → entrega_pronta: true
+
+  "prontos até 2029" / "prontos para morar até 2028"
+    → entrega_ate_ano: 2029
+    → NÃO usar entrega_pronta junto (inclui Pronto + entregas até dez/ano)
+
+  "entrega em 2027"              → entrega_ano: 2027
+  "entrega em maio/2027"         → entrega_mes: 5, entrega_ano: 2027
+  "entrega até maio/2027"        → entrega_ate_mes + entrega_ate_ano
+  "a partir de 2028"             → entrega_de_mes + entrega_de_ano
+  Texto literal do catálogo      → entrega_contem: ["Mai/2027"]
+
+  Não confundir com empreendimento cujo nome contém "lançamento".
+
+================================================================================
+4. PÓS-PROCESSAMENTO (CÓDIGO, FORA DO PROMPT)
+================================================================================
+
+Após a resposta da IA, aplicarHeuristicas() em src/lib/assistente-imoveis.ts:
+
+  busca-texto.ts
+    - extrairHeuristicaComercial (laje, sala comercial)
+    - corrigirTermosBusca (coorporativa → corporativa)
+    - ajustarContagensExatas (quartos/suítes exatos na mensagem)
+
+  entrega-query.ts
+    - extrairEntregaDaMensagem
+    - mesclarFiltrosEntrega / limparFiltrosEntrega
+
+  bairro-busca.ts
+    - ajustarFiltrosBairro (casamento com catálogo de bairros)
+
+  lancamentos-query.ts
+    - buscarLancamentos (consulta Supabase + filtros em memória)
+    - tolerância de metragem ±5%
+    - inferência de andar pela unidade (andar-unidade.ts)
+
+================================================================================
+5. EXEMPLO DE JSON DE SAÍDA
+================================================================================
+
+{
+  "resposta": "Busquei apartamentos de 3 quartos em Moema até 2 milhões.",
+  "filtros": {
+    "q": null,
+    "termos": null,
+    "construtora": [],
+    "empreendimento": [],
+    "bairro": ["Moema"],
+    "tipologia": [],
+    "unidade": [],
+    "andar": [],
+    "desconto_contem": [],
+    "valor_min": null,
+    "valor_max": 2000000,
+    "metragem_min": null,
+    "metragem_max": null,
+    "dormitorios_min": 3,
+    "dormitorios_max": 3,
+    "suites_min": null,
+    "suites_max": null,
+    "vagas_min": null,
+    "tipo_imovel": "apartamento",
+    "entrega_pronta": null,
+    "entrega_mes": null,
+    "entrega_ano": null,
+    "entrega_ate_mes": null,
+    "entrega_ate_ano": null,
+    "entrega_de_mes": null,
+    "entrega_de_ano": null,
+    "entrega_contem": null,
+    "condicoes_or": null
+  }
+}
+
+================================================================================
+6. HISTÓRICO DE EVOLUÇÃO (GIT)
+================================================================================
+
+  c718830  Assistente inicial com gpt-4o-mini
+  25197cf  Tolerância de metragem, OR, relevância
+  6a97a82  Apartamento (2+ quartos) vs studio
+  99ab2b9  Filtros de entrega (prontos, ano/mês, até/de)
+  f52da89  Inferência de andar pela unidade
+  dfaded5  Busca exata por quartos e suítes
+  2f47b54  Casamento exato de bairro
+  1419c18  Temperatura ajustada para 0.2
+
+================================================================================
+Fim do documento — gerado a partir do código em assistente-imoveis.ts
+================================================================================

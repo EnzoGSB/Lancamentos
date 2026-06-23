@@ -132,20 +132,18 @@ export function extrairDormitorios(tipologia: string | null | undefined): number
   return null
 }
 
-/** Studio: tipologia explícita ou 0–1 dormitório/quarto. */
+/** Studio: tipologia explícita "Studio". */
 export function isStudioImovel(l: Lancamento): boolean {
   const tip = removerSufixoLixoTipologia(l.tipologia ?? '').trim()
-  if (/^studio\b/i.test(tip)) return true
-  const d = extrairDormitorios(tip)
-  return d != null && d <= 1
+  return /^studio\b/i.test(tip)
 }
 
-/** Apartamento: 2+ dormitórios; exclui studios. Tipologias sem contagem mas claramente multi-quarto contam. */
+/** Apartamento: residencial com dormitórios/suítes ou tipologias típicas; exclui studios explícitos. */
 export function isApartamentoImovel(l: Lancamento): boolean {
   if (isStudioImovel(l)) return false
   const tip = removerSufixoLixoTipologia(l.tipologia ?? '')
   const d = extrairDormitorios(tip)
-  if (d != null && d >= 2) return true
+  if (d != null && d >= 1) return true
   if (tip && /\d+\s*suítes?|duplex|triplex|cobertura|penthouse|garden|loft/i.test(tip)) return true
   return false
 }
