@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   Building2,
+  Database,
   LayoutDashboard,
   MessageSquarePlus,
   PanelLeftClose,
@@ -207,6 +208,7 @@ function SidebarContent({
         <NavItem href="/" icon={Search} label="Pesquisa" active={isPesquisa} collapsed={effectiveCollapsed} onNavigate={onCloseMobile} />
         <NavItem href="/dashboard" icon={LayoutDashboard} label="Dashboard" active={pathname === '/dashboard' || pathname.startsWith('/upload')} collapsed={effectiveCollapsed} onNavigate={onCloseMobile} />
         <NavItem href="/imoveis" icon={Building2} label="Imóveis" active={pathname === '/imoveis'} collapsed={effectiveCollapsed} onNavigate={onCloseMobile} />
+        <NavItem href="/migracao" icon={Database} label="Migração" active={pathname === '/migracao'} collapsed={effectiveCollapsed} onNavigate={onCloseMobile} />
       </div>
     </>
   )

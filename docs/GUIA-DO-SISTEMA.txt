@@ -1,0 +1,363 @@
+================================================================================
+                    TABELÕES — GUIA DE USO
+================================================================================
+
+Olá! Este guia explica como usar a plataforma Tabelões no dia a dia:
+como enviar PDFs de construtoras, conferir os dados extraídos e pesquisar
+imóveis no catálogo.
+
+
+--------------------------------------------------------------------------------
+O QUE A PLATAFORMA FAZ
+--------------------------------------------------------------------------------
+
+O Tabelões transforma PDFs de tabelas de vendas (os "tabelões" das
+construtoras) em um catálogo organizado de imóveis.
+
+Você envia o PDF → a inteligência artificial lê e extrai os dados → você
+confere e corrige → os imóveis ficam disponíveis para pesquisa.
+
+Cada imóvel no catálogo traz informações como: construtora, empreendimento,
+bairro, metragem, quartos, vagas, valores, data de entrega e desconto.
+
+A extração automática é muito boa, mas não é perfeita. Por isso existe a
+etapa de revisão: é ali que você garante que tudo está correto antes de
+salvar.
+
+
+--------------------------------------------------------------------------------
+COMO FUNCIONA — EM 6 PASSOS
+--------------------------------------------------------------------------------
+
+  1. Envie o PDF da construtora (menu Dashboard → Novo Upload)
+  2. Remova páginas desnecessárias, se quiser (capas, anúncios etc.)
+  3. Aguarde o processamento automático (o sistema avisa quando terminar)
+  4. Revise a tabela de imóveis extraídos e corrija o que precisar
+  5. Clique em "Confirmar e Salvar"
+  6. Pesquise os imóveis na tela inicial ou na aba Imóveis
+
+Pronto! Os lançamentos passam a fazer parte do seu catálogo.
+
+
+================================================================================
+                         MENU PRINCIPAL
+================================================================================
+
+No lado esquerdo da tela você encontra:
+
+  PESQUISA
+    Tela inicial. Pergunte em português o imóvel que procura — a IA busca
+    no catálogo e mostra os resultados.
+
+  DASHBOARD
+    Onde você envia novos PDFs e acompanha o andamento de cada um.
+
+  IMÓVEIS
+    Lista completa do catálogo, com filtros por construtora, bairro, preço,
+    metragem e outros critérios.
+
+Outros botões úteis no menu:
+
+  Nova pesquisa     Começa uma busca do zero
+  Histórico         Suas buscas anteriores (clique para reabrir)
+  Recolher menu     Ícone no topo — esconde os nomes e deixa só os ícones
+
+No celular, toque no ícone de menu (☰) no topo da tela para abrir o menu.
+
+
+================================================================================
+                    1. PESQUISA DE IMÓVEIS
+================================================================================
+
+Para que serve?
+  Encontrar imóveis rapidamente falando como você falaria com um colega.
+
+Como usar:
+  1. Digite o que procura no campo na parte de baixo da tela
+  2. Pressione Enter ou clique no botão de enviar (ícone de avião)
+  3. A IA responde com uma explicação e cards dos imóveis encontrados
+
+Exemplos de buscas que funcionam bem:
+
+  "Apartamento na Vila Mariana com 3 quartos até 2 milhões"
+  "Studio em Moema com 1 vaga"
+  "Imóveis da Cyrela com 2 suítes"
+  "Lançamentos prontos para morar até 1,5 milhão"
+
+Na tela vazia, você também pode clicar nos exemplos sugeridos para testar.
+
+Botão "Ver PDF" (nos resultados):
+  Abre o tabelão original em uma nova aba — ideal para conferir preço,
+  condições de pagamento e detalhes que não aparecem no card.
+
+Dica: quanto mais específica a busca (bairro, preço, quartos, vagas),
+melhores os resultados. Só aparecem imóveis que já foram processados
+e salvos no sistema.
+
+
+================================================================================
+                    2. DASHBOARD
+================================================================================
+
+Para que serve?
+  É o painel de controle: mostra todos os PDFs que você enviou, em que
+  etapa cada um está e o que fazer em seguida.
+
+Botão "+ Novo Upload"
+  Leva à tela de envio de PDF. Use sempre que receber um tabelão novo.
+
+Números no topo:
+  - Lançamentos no Banco → total de imóveis salvos (clique para ver a lista)
+  - PDFs Processados → quantos tabelões já foram concluídos
+  - Aguardando Revisão → quantos estão prontos para você conferir
+
+Faixa azul "Fila de processamento"
+  Aparece quando há PDFs sendo processados. O sistema trabalha com um PDF
+  por vez, na ordem de envio. Não precisa fazer nada — ele avança sozinho
+  e avisa quando cada um ficar pronto.
+
+Filtros por construtora
+  Botões arredondados para ver só os PDFs de uma construtora específica.
+
+Lista de PDFs (agrupada por construtora)
+  Clique no nome da construtora para expandir ou recolher a lista.
+  Cada PDF mostra o nome do arquivo, a data e um status colorido.
+
+O que significa cada status?
+
+  Preparar PDF        → Falta escolher se remove alguma página antes de processar
+  Pendente / Na fila  → Na fila, aguardando a vez
+  Extraindo           → Lendo o documento
+  Analisando          → Entendendo a estrutura da tabela
+  Processando         → Extraindo os imóveis (PDFs grandes podem levar 10–20 min)
+  Aguardando Revisão  → PRONTO! Clique em "Revisar" para conferir
+  Concluído           → Já salvo no catálogo. Clique em "Ver dados"
+  Erro                → Algo falhou. Leia a mensagem e tente novamente
+
+Botões em cada PDF:
+
+  Revisar       Abre a tabela para você conferir e salvar
+  Ver dados     Mostra os imóveis já salvos daquele PDF
+  Preparar      Abre a tela para remover páginas antes de processar
+  Lixeira       Apaga o PDF e todos os imóveis vinculados a ele
+                (cuidado: não dá para desfazer)
+
+Nome da construtora (ícone de lápis)
+  Se a IA não identificou a construtora, aparece "A identificar".
+  Clique no lápis, digite o nome correto e confirme.
+
+
+================================================================================
+                    3. ENVIAR UM TABELÃO (UPLOAD)
+================================================================================
+
+Para que serve?
+  Incluir um novo PDF de construtora no sistema.
+
+Como usar:
+  1. No Dashboard, clique em "+ Novo Upload"
+  2. Arraste o PDF para a área tracejada OU clique para escolher o arquivo
+  3. Você pode enviar vários PDFs de uma vez (até 20, máximo 50 MB cada)
+  4. Clique em "Enviar PDF"
+
+O que acontece depois?
+  - Se enviou 1 PDF → vai direto para a tela de preparação
+  - Se enviou vários → volta ao Dashboard; prepare cada um clicando em "Preparar"
+
+Se o sistema avisar que o PDF já foi enviado antes, use o botão
+"Abrir processamento existente" em vez de enviar de novo.
+
+
+================================================================================
+                    4. PREPARAR O PDF (REMOVER PÁGINAS)
+================================================================================
+
+Para que serve?
+  Tirar páginas que não interessam antes da IA processar — capas, índices,
+  páginas de outras cidades, material publicitário etc.
+
+Isso deixa o processamento mais rápido e melhora a qualidade da extração.
+
+Como usar:
+  - Clique nas miniaturas das páginas que quer remover (ficam marcadas em vermelho)
+  - Ou digite no campo de texto, por exemplo: 1, 5-8, 12
+  - Segure Shift e clique para marcar um intervalo de páginas de uma vez
+
+Botões:
+
+  Remover páginas
+    Corta as páginas marcadas e manda o PDF para processamento.
+
+  Processar sem remover
+    Manda o PDF inteiro, sem cortar nada. Use quando o arquivo já está limpo.
+
+Depois disso você volta ao Dashboard e o PDF entra na fila automaticamente.
+
+
+================================================================================
+                    5. REVISÃO (ETAPA MAIS IMPORTANTE)
+================================================================================
+
+Para que serve?
+  Conferir e corrigir os dados que a IA extraiu ANTES de salvar no catálogo.
+  Esta é a etapa que garante a qualidade das informações.
+
+Quando o status mudar para "Aguardando Revisão", clique em "Revisar" no
+Dashboard. Você verá uma tabela com todos os imóveis extraídos.
+
+O que conferir:
+  - Nomes de empreendimentos e bairros corretos
+  - Metragens e valores (compare com o PDF — use o botão "Ver PDF")
+  - Se não faltou nenhum empreendimento (em tabelões com vários prédios)
+  - Linhas duplicadas ou incorretas → marque e apague
+
+Como editar:
+  - Clique em qualquer célula e digite o valor correto
+  - Marque as caixinhas à esquerda para selecionar imóveis inteiros e apagar
+  - Botão "Aplicar para toda a coluna": selecione uma célula, clique no botão
+    e o mesmo valor será copiado para todas as linhas daquela coluna
+    (útil para corrigir construtora ou bairro de uma vez)
+  - Botão "Desfazer" volta a alteração anterior
+
+Quando estiver tudo certo:
+  Clique em "Confirmar e Salvar". Os imóveis passam a fazer parte do catálogo.
+
+Enquanto processa:
+  A tela mostra "Processando..." e atualiza sozinha. PDFs grandes podem
+  demorar — é normal. Você pode acompanhar pelo Dashboard.
+
+Se der erro:
+  Clique em "Tentar novamente" para colocar o PDF de volta na fila.
+
+
+================================================================================
+                    6. IMÓVEIS (CATÁLOGO COMPLETO)
+================================================================================
+
+Para que serve?
+  Ver e filtrar todos os imóveis já salvos no sistema.
+
+Quando usar em vez da Pesquisa?
+  - Pesquisa → perguntas rápidas em linguagem natural ("3 quartos em Moema")
+  - Imóveis → filtros exatos, listagem completa, conferência detalhada
+
+Filtros disponíveis:
+  Construtora, Empreendimento, Bairro, Tipologia, Dormitórios, Entrega,
+  Metragem (mín. e máx.), Vagas, Valor (mín. e máx.)
+
+  Clique em cada filtro, digite para buscar a opção e marque o que quiser.
+  Use "Limpar filtros" para recomeçar.
+
+Outros recursos:
+  - Busca geral no topo (procura em todos os campos)
+  - Controle de tamanho da letra (slider + botão Aplicar)
+  - Botão "Ver PDF" em cada linha — abre o tabelão de origem
+  - Paginação no rodapé (10 imóveis por página)
+  - Marcar imóveis e "Apagar selecionados" para remover do catálogo
+
+
+================================================================================
+                    PESQUISA x IMÓVEIS — QUAL USAR?
+================================================================================
+
+  Situação                              Onde ir
+  ─────────────────────────────────────────────────────────────────────
+  Atender cliente com pergunta rápida   Pesquisa
+  "Tem algo em Pinheiros até 1,5M?"     (linguagem natural)
+
+  Montar lista com critérios exatos     Imóveis
+  Cyrela + Moema + 2 vagas + até 2M     (filtros combinados)
+
+  Conferir se um PDF foi bem salvo      Imóveis (filtre a construtora)
+  Validar preço no documento original   Ver PDF (em qualquer tela)
+
+
+================================================================================
+                    DICAS PARA APROVEITAR MELHOR
+================================================================================
+
+ANTES DE PROCESSAR
+  ✓ Remova capas, índices e páginas de outras regiões na etapa Preparar
+  ✓ Em tabelões com vários empreendimentos, o processamento demora mais —
+    isso é esperado
+
+NA REVISÃO
+  ✓ Nunca pule a conferência — é o que garante dados confiáveis
+  ✓ Abra o PDF em outra aba e compare preços e metragens
+  ✓ Em tabelões grandes, reserve um tempo só para revisar com calma
+  ✓ Apague linhas duplicadas ou que não são imóveis
+
+NO DIA A DIA
+  ✓ Use o Dashboard para saber o que está pronto para revisar
+  ✓ Corrija o nome da construtora cedo — facilita organizar depois
+  ✓ Use a Pesquisa para atendimento rápido ao cliente
+  ✓ Use Imóveis para auditoria e listagens detalhadas
+
+VÁRIOS PDFS DE UMA VEZ
+  ✓ Pode enviar em lote — o sistema processa um por vez, automaticamente
+  ✓ Prepare cada PDF (remover páginas) antes de ir para o próximo
+  ✓ O Dashboard avisa quando cada um ficar pronto para revisão
+
+
+================================================================================
+                    PERGUNTAS FREQUENTES
+================================================================================
+
+  Posso fechar o navegador enquanto processa?
+  Sim. O processamento continua no servidor. Volte ao Dashboard depois
+  para ver o status.
+
+  O PDF já foi enviado antes. E agora?
+  O sistema detecta duplicatas. Use "Abrir processamento existente" em vez
+  de enviar de novo.
+
+  A IA errou um valor. Como corrijo?
+  Na revisão, antes de salvar — edite direto na tabela.
+  Se já salvou, vá em Imóveis, encontre o registro e apague; depois revise
+  e salve de novo o PDF correto.
+
+  Quantos PDFs processam ao mesmo tempo?
+  Um por vez, na ordem da fila. Os demais aguardam automaticamente.
+
+  Os imóveis aparecem na Pesquisa logo após salvar?
+  Sim, assim que você clica em "Confirmar e Salvar".
+
+  Apaguei um processamento por engano. Recupera?
+  Não. Apagar remove o PDF e todos os imóveis salvos dele. Confirme sempre
+  no aviso que aparece na tela.
+
+
+================================================================================
+                    GLOSSÁRIO
+================================================================================
+
+  Tabelão           PDF com tabela de preços/lançamentos de uma construtora
+  Lançamento        Cada imóvel ou tipologia cadastrada no sistema
+  Processamento     Todo o ciclo de um PDF, do envio até salvar no catálogo
+  Revisão           Etapa em que você confere os dados antes de salvar
+  Catálogo          Conjunto de todos os imóveis salvos no sistema
+
+
+================================================================================
+                    RESUMO DO FLUXO
+================================================================================
+
+    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+    │   Enviar    │ ──► │  Preparar   │ ──► │ Processar   │
+    │    PDF      │     │  (opcional) │     │  (automático)│
+    └─────────────┘     └─────────────┘     └──────┬──────┘
+                                                    │
+                                                    ▼
+    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+    │  Pesquisar  │ ◄── │   Salvar    │ ◄── │   Revisar   │
+    │  imóveis    │     │  no catálogo│     │   e corrigir│
+    └─────────────┘     └─────────────┘     └─────────────┘
+
+
+================================================================================
+
+Dúvidas sobre o uso da plataforma? Entre em contato com o suporte.
+
+Tabelões — Catálogo inteligente de lançamentos imobiliários
+
+================================================================================

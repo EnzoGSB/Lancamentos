@@ -221,10 +221,6 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
             .eq('id', processamentoId)
         }
 
-        if (!extractedText || extractedText.trim().length < 50) {
-          throw new Error('Texto extraído do PDF está vazio ou muito curto. O PDF pode ser escaneado ou protegido.')
-        }
-
         await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
 
         await supabaseAdmin
