@@ -15,7 +15,7 @@ import {
   idsAguardandoFila,
   resumoFilaGlobal,
 } from '@/lib/fila-processamento'
-import { EVENTO_FILA_ATUALIZADA } from '@/lib/processamento-fila-worker'
+import { EVENTO_FILA_ATUALIZADA, solicitarProcessamento } from '@/lib/processamento-fila-worker'
 import type { AnaliseIA, ProcessamentoLancamento } from '@/lib/types'
 import { construtoraEfetivaProcessamento } from '@/lib/construtora-processamento'
 
@@ -55,14 +55,18 @@ const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secon
 function ProcessamentoRow({
   p,
   deletingId,
+  retryingId,
   onDelete,
+  onRetry,
   onConstrutoraUpdated,
   compact = false,
   naFila = false,
 }: {
   p: ProcessamentoComContagem
   deletingId: string | null
+  retryingId: string | null
   onDelete: (p: ProcessamentoComContagem) => void
+  onRetry: (p: ProcessamentoComContagem) => void
   onConstrutoraUpdated: (id: string, nome: string) => void
   compact?: boolean
   naFila?: boolean
@@ -137,6 +141,18 @@ function ProcessamentoRow({
             {naFila ? 'Na fila' : 'Iniciando…'}
           </span>
         )}
+        {p.status === 'erro' && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-red-200 text-red-700 hover:bg-red-50"
+            disabled={retryingId === p.id}
+            onClick={() => onRetry(p)}
+          >
+            {retryingId === p.id ? 'Reenfileirando…' : 'Tentar novamente'}
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"
@@ -167,7 +183,9 @@ function ConstrutoraBloco({
   aberta,
   onToggle,
   deletingId,
+  retryingId,
   onDelete,
+  onRetry,
   onConstrutoraUpdated,
   idsNaFila,
 }: {
@@ -176,7 +194,9 @@ function ConstrutoraBloco({
   aberta: boolean
   onToggle: () => void
   deletingId: string | null
+  retryingId: string | null
   onDelete: (p: ProcessamentoComContagem) => void
+  onRetry: (p: ProcessamentoComContagem) => void
   onConstrutoraUpdated: (id: string, nome: string) => void
   idsNaFila?: Set<string>
 }) {
@@ -244,7 +264,9 @@ function ConstrutoraBloco({
               key={p.id}
               p={p}
               deletingId={deletingId}
+              retryingId={retryingId}
               onDelete={onDelete}
+              onRetry={onRetry}
               onConstrutoraUpdated={onConstrutoraUpdated}
               compact
               naFila={idsNaFila?.has(p.id) ?? false}
@@ -261,6 +283,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [totalLancamentos, setTotalLancamentos] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [retryingId, setRetryingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ProcessamentoLancamento | null>(null)
   const [filtroConstrutora, setFiltroConstrutora] = useState<string | null>(null)
   const [recolhidas, setRecolhidas] = useState<Set<string>>(new Set())
@@ -319,6 +342,30 @@ export default function DashboardPage() {
       .then(r => r.json())
       .then(d => setTotalLancamentos(d.count ?? 0))
       .catch(() => {})
+  }, [])
+
+  const handleRetry = useCallback(async (p: ProcessamentoComContagem) => {
+    setRetryingId(p.id)
+    try {
+      const result = await solicitarProcessamento(p.id)
+      if (!result.ok) {
+        toast.error(result.error || 'Erro ao reenfileirar')
+        return
+      }
+      setProcessamentos(prev =>
+        prev.map(x => (x.id === p.id ? { ...x, status: 'pendente' as const, erro: null } : x))
+      )
+      window.dispatchEvent(new CustomEvent(EVENTO_FILA_ATUALIZADA))
+      toast.message(
+        result.naFila
+          ? 'PDF reenfileirado — aguarde o processamento anterior terminar.'
+          : 'Reprocessamento iniciado.'
+      )
+    } catch {
+      toast.error('Erro de conexão')
+    } finally {
+      setRetryingId(null)
+    }
   }, [])
 
   const refreshProcessamentos = useCallback(async () => {
@@ -537,7 +584,9 @@ export default function DashboardPage() {
                   aberta={!recolhidas.has(construtora)}
                   onToggle={() => toggleRecolhida(construtora)}
                   deletingId={deletingId}
+                  retryingId={retryingId}
                   onDelete={setDeleteTarget}
+                  onRetry={handleRetry}
                   onConstrutoraUpdated={handleConstrutoraUpdated}
                   idsNaFila={idsNaFila}
                 />
