@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { ProcessamentoAdiadoError } from '@/lib/processamento-adiado'
 
 export class ProcessamentoCanceladoError extends Error {
   constructor() {
@@ -12,7 +13,8 @@ export const STATUS_CANCELAVEL = ['extraindo', 'analisando', 'processando', 'sal
 
 export async function verificarProcessamentoAtivo(
   supabase: SupabaseClient,
-  processamentoId: string
+  processamentoId: string,
+  opts?: { duranteExtracao?: boolean }
 ): Promise<void> {
   const { data } = await supabase
     .from('processamentos_lancamentos')
@@ -22,6 +24,10 @@ export async function verificarProcessamentoAtivo(
 
   if (!data || data.status === 'cancelado') {
     throw new ProcessamentoCanceladoError()
+  }
+
+  if (opts?.duranteExtracao && data.status === 'adiado') {
+    throw new ProcessamentoAdiadoError()
   }
 }
 

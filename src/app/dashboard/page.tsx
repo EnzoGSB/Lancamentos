@@ -15,7 +15,7 @@ import {
   idsAguardandoFila,
   resumoFilaGlobal,
 } from '@/lib/fila-processamento'
-import { EVENTO_FILA_ATUALIZADA, solicitarProcessamento } from '@/lib/processamento-fila-worker'
+import { EVENTO_FILA_ATUALIZADA, adiarProcessamento, solicitarProcessamento } from '@/lib/processamento-fila-worker'
 import type { AnaliseIA, ProcessamentoLancamento } from '@/lib/types'
 import { construtoraEfetivaProcessamento } from '@/lib/construtora-processamento'
 
@@ -43,6 +43,7 @@ function ordenarConstrutoras(a: string, b: string): number {
 const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   aguardando_preparacao:  { label: 'Preparar PDF',          variant: 'outline' },
   pendente:               { label: 'Pendente',              variant: 'secondary' },
+  adiado:                 { label: 'Adiado',                variant: 'secondary' },
   extraindo:              { label: 'Extraindo',             variant: 'outline' },
   analisando:             { label: 'Analisando (IA)',       variant: 'outline' },
   processando:            { label: 'Processando (IA)',      variant: 'outline' },
@@ -56,8 +57,10 @@ function ProcessamentoRow({
   p,
   deletingId,
   retryingId,
+  deferringId,
   onDelete,
   onRetry,
+  onDefer,
   onConstrutoraUpdated,
   compact = false,
   naFila = false,
@@ -65,8 +68,10 @@ function ProcessamentoRow({
   p: ProcessamentoComContagem
   deletingId: string | null
   retryingId: string | null
+  deferringId: string | null
   onDelete: (p: ProcessamentoComContagem) => void
   onRetry: (p: ProcessamentoComContagem) => void
+  onDefer: (p: ProcessamentoComContagem) => void
   onConstrutoraUpdated: (id: string, nome: string) => void
   compact?: boolean
   naFila?: boolean
@@ -141,6 +146,23 @@ function ProcessamentoRow({
             {naFila ? 'Na fila' : 'Iniciando…'}
           </span>
         )}
+        {p.status === 'adiado' && (
+          <span className="text-sm px-4 py-1.5 bg-gray-100 text-gray-600 rounded">
+            {naFila ? 'No fim da fila' : 'Aguardando…'}
+          </span>
+        )}
+        {emProgresso(p.status) && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-amber-200 text-amber-800 hover:bg-amber-50"
+            disabled={deferringId === p.id}
+            onClick={() => onDefer(p)}
+          >
+            {deferringId === p.id ? 'Adiando…' : 'Processar próximo'}
+          </Button>
+        )}
         {p.status === 'erro' && (
           <Button
             type="button"
@@ -173,7 +195,7 @@ function resumoStatus(items: ProcessamentoComContagem[]) {
   const concluidos = items.filter(p => p.status === 'concluido').length
   const revisao = items.filter(p => p.status === 'aguardando_confirmacao').length
   const preparacao = items.filter(p => p.status === 'aguardando_preparacao').length
-  const pendentes = items.filter(p => p.status === 'pendente').length
+  const pendentes = items.filter(p => p.status === 'pendente' || p.status === 'adiado').length
   return { concluidos, revisao, preparacao, pendentes }
 }
 
@@ -184,8 +206,10 @@ function ConstrutoraBloco({
   onToggle,
   deletingId,
   retryingId,
+  deferringId,
   onDelete,
   onRetry,
+  onDefer,
   onConstrutoraUpdated,
   idsNaFila,
 }: {
@@ -195,8 +219,10 @@ function ConstrutoraBloco({
   onToggle: () => void
   deletingId: string | null
   retryingId: string | null
+  deferringId: string | null
   onDelete: (p: ProcessamentoComContagem) => void
   onRetry: (p: ProcessamentoComContagem) => void
+  onDefer: (p: ProcessamentoComContagem) => void
   onConstrutoraUpdated: (id: string, nome: string) => void
   idsNaFila?: Set<string>
 }) {
@@ -265,8 +291,10 @@ function ConstrutoraBloco({
               p={p}
               deletingId={deletingId}
               retryingId={retryingId}
+              deferringId={deferringId}
               onDelete={onDelete}
               onRetry={onRetry}
+              onDefer={onDefer}
               onConstrutoraUpdated={onConstrutoraUpdated}
               compact
               naFila={idsNaFila?.has(p.id) ?? false}
@@ -284,6 +312,7 @@ export default function DashboardPage() {
   const [totalLancamentos, setTotalLancamentos] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [retryingId, setRetryingId] = useState<string | null>(null)
+  const [deferringId, setDeferringId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ProcessamentoLancamento | null>(null)
   const [filtroConstrutora, setFiltroConstrutora] = useState<string | null>(null)
   const [recolhidas, setRecolhidas] = useState<Set<string>>(new Set())
@@ -342,6 +371,26 @@ export default function DashboardPage() {
       .then(r => r.json())
       .then(d => setTotalLancamentos(d.count ?? 0))
       .catch(() => {})
+  }, [])
+
+  const handleDefer = useCallback(async (p: ProcessamentoComContagem) => {
+    setDeferringId(p.id)
+    try {
+      const result = await adiarProcessamento(p.id)
+      if (!result.ok) {
+        toast.error(result.error || 'Erro ao adiar processamento')
+        return
+      }
+      setProcessamentos(prev =>
+        prev.map(x => (x.id === p.id ? { ...x, status: 'adiado' as const, erro: null } : x))
+      )
+      window.dispatchEvent(new CustomEvent(EVENTO_FILA_ATUALIZADA))
+      toast.message('PDF adiado para o fim da fila — iniciando o próximo.')
+    } catch {
+      toast.error('Erro de conexão')
+    } finally {
+      setDeferringId(null)
+    }
   }, [])
 
   const handleRetry = useCallback(async (p: ProcessamentoComContagem) => {
@@ -411,7 +460,7 @@ export default function DashboardPage() {
   }, [refreshCount])
 
   const temEmAndamento = processamentos.some(p => emProgresso(p.status))
-  const temPendentes = processamentos.some(p => p.status === 'pendente')
+  const temPendentes = processamentos.some(p => p.status === 'pendente' || p.status === 'adiado')
   const filaAtiva = resumoFila.ativa
 
   useEffect(() => {
@@ -585,8 +634,10 @@ export default function DashboardPage() {
                   onToggle={() => toggleRecolhida(construtora)}
                   deletingId={deletingId}
                   retryingId={retryingId}
+                  deferringId={deferringId}
                   onDelete={setDeleteTarget}
                   onRetry={handleRetry}
+                  onDefer={handleDefer}
                   onConstrutoraUpdated={handleConstrutoraUpdated}
                   idsNaFila={idsNaFila}
                 />

@@ -82,23 +82,32 @@ export async function haProcessamentoAtivoSemRetomada(): Promise<boolean> {
 }
 
 export async function obterProximoPendenteId(): Promise<string | null> {
-  const { data } = await supabaseAdmin
+  const { data: pendentes } = await supabaseAdmin
     .from('processamentos_lancamentos')
     .select('id')
     .eq('status', 'pendente')
     .order('page_count', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true })
     .limit(1)
-    .maybeSingle()
 
-  return data?.id ?? null
+  if (pendentes?.[0]?.id) return pendentes[0].id
+
+  const { data: adiados } = await supabaseAdmin
+    .from('processamentos_lancamentos')
+    .select('id')
+    .eq('status', 'adiado')
+    .order('page_count', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
+    .limit(1)
+
+  return adiados?.[0]?.id ?? null
 }
 
 export async function temPendenteNoBanco(): Promise<boolean> {
   const { data } = await supabaseAdmin
     .from('processamentos_lancamentos')
     .select('id')
-    .eq('status', 'pendente')
+    .in('status', ['pendente', 'adiado'])
     .limit(1)
     .maybeSingle()
 
@@ -113,6 +122,10 @@ export async function avancarFilaServidor(): Promise<void> {
   if (continuarId) {
     const result = await executarProcessamento(continuarId)
     if ('continua' in result && result.continua) {
+      agendarAvancoFilaServidor()
+      return
+    }
+    if ('adiado' in result && result.adiado) {
       agendarAvancoFilaServidor()
       return
     }
@@ -134,6 +147,11 @@ export async function avancarFilaServidor(): Promise<void> {
   if (!result.ok && 'busy' in result && result.busy) return
 
   if ('continua' in result && result.continua) {
+    agendarAvancoFilaServidor()
+    return
+  }
+
+  if ('adiado' in result && result.adiado) {
     agendarAvancoFilaServidor()
     return
   }

@@ -19,6 +19,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ continua: true }, { status: 202 })
   }
 
+  if ('adiado' in result && result.adiado) {
+    agendarAvancoFilaServidor()
+    return NextResponse.json({ adiado: true })
+  }
+
   if (result.ok) {
     agendarAvancoFilaServidor()
     return NextResponse.json({

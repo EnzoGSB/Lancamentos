@@ -125,3 +125,20 @@ export async function solicitarProcessamento(processamentoId: string): Promise<{
   }
   return { ok: true, naFila: !result.iniciou }
 }
+
+/** Adia o PDF em processamento para o fim da fila e inicia o próximo. */
+export async function adiarProcessamento(processamentoId: string): Promise<{
+  ok: boolean
+  error?: string
+}> {
+  const res = await fetch(`/api/processamentos/${processamentoId}/adiar`, {
+    method: 'POST',
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    return { ok: false, error: data.error || 'Erro ao adiar processamento' }
+  }
+
+  emitirAtualizacao()
+  return { ok: true }
+}

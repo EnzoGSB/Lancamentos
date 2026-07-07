@@ -12,6 +12,7 @@ import {
   finalizarProcessamentoCancelado,
   verificarProcessamentoAtivo,
 } from '@/lib/processamento-cancelado'
+import { ProcessamentoAdiadoError } from '@/lib/processamento-adiado'
 import { buscarExtracaoCache, salvarExtracaoCache } from '@/lib/extracao-cache'
 import { iniciarHeartbeatProcessamento } from '@/lib/processamento-heartbeat'
 import {
@@ -34,6 +35,7 @@ function patchStatus<T extends Record<string, unknown>>(fields: T) {
 export type ResultadoProcessamento =
   | { ok: true; analise: AnaliseIA; lancamentos: LancamentoAI[]; fromCache?: boolean }
   | { ok: false; cancelled: true }
+  | { ok: false; adiado: true }
   | { ok: false; continua: true }
   | { ok: false; erro: string; busy?: boolean; notFound?: boolean; invalidStatus?: boolean }
 
@@ -41,13 +43,20 @@ async function salvarProgressoParcial(
   processamentoId: string,
   progresso: NonNullable<ReturnType<typeof lerProgressoExtracao>>
 ) {
-  await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from('processamentos_lancamentos')
     .update(patchStatus({
       status: 'processando',
       lancamentos_ai: serializarLancamentosAiComProgresso(progresso),
     }))
     .eq('id', processamentoId)
+    .in('status', [...STATUS_SLOT_OCUPADO])
+    .select('id')
+    .maybeSingle()
+
+  if (!data) {
+    throw new ProcessamentoAdiadoError()
+  }
 }
 
 async function extrairComEtapas(
@@ -62,7 +71,7 @@ async function extrairComEtapas(
   const opts = {
     progresso: progressoSalvo,
     onFaixaConcluida: async (progresso: NonNullable<ReturnType<typeof lerProgressoExtracao>>) => {
-      await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
+      await verificarProcessamentoAtivo(supabaseAdmin, processamentoId, { duranteExtracao: true })
       await salvarProgressoParcial(processamentoId, progresso)
     },
     deveEncerrarEtapa: () => Date.now() - inicioEtapa >= ORCAMENTO_ETAPA_MS,
@@ -116,7 +125,7 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
     }
   }
 
-  if (!['pendente', 'erro'].includes(proc.status) && !continuando) {
+  if (!['pendente', 'erro', 'adiado'].includes(proc.status) && !continuando) {
     return {
       ok: false,
       erro: `Processamento não pode ser iniciado no status "${proc.status}".`,
@@ -203,10 +212,17 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
 
       if (podeRetomar) {
         analise = analiseSalva!
-        await supabaseAdmin
+        const { data: retomadaAtiva } = await supabaseAdmin
           .from('processamentos_lancamentos')
           .update(patchStatus({ status: 'processando', erro: null }))
           .eq('id', processamentoId)
+          .in('status', ['pendente', 'erro', 'adiado'])
+          .select('id')
+          .maybeSingle()
+
+        if (!retomadaAtiva) {
+          throw new ProcessamentoAdiadoError()
+        }
       } else {
         await supabaseAdmin
           .from('processamentos_lancamentos')
@@ -221,21 +237,29 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
             .eq('id', processamentoId)
         }
 
-        await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
+        await verificarProcessamentoAtivo(supabaseAdmin, processamentoId, { duranteExtracao: true })
 
         await supabaseAdmin
           .from('processamentos_lancamentos')
           .update(patchStatus({ status: 'analisando' }))
           .eq('id', processamentoId)
+          .in('status', [...STATUS_SLOT_OCUPADO])
 
         analise = await analisarPDF(extractedText, proc.original_filename || '', buffer)
 
-        await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
+        await verificarProcessamentoAtivo(supabaseAdmin, processamentoId, { duranteExtracao: true })
 
-        await supabaseAdmin
+        const { data: aindaAtivo } = await supabaseAdmin
           .from('processamentos_lancamentos')
           .update(patchStatus({ status: 'processando', tipo: analise.tipo, analise_ia: analise }))
           .eq('id', processamentoId)
+          .in('status', [...STATUS_SLOT_OCUPADO])
+          .select('id')
+          .maybeSingle()
+
+        if (!aindaAtivo) {
+          throw new ProcessamentoAdiadoError()
+        }
       }
     }
 
@@ -267,15 +291,22 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
       throw new Error(ERRO_EXTRACAO_VAZIA)
     }
 
-    await verificarProcessamentoAtivo(supabaseAdmin, processamentoId)
+    await verificarProcessamentoAtivo(supabaseAdmin, processamentoId, { duranteExtracao: true })
 
-    await supabaseAdmin
+    const { data: concluidoAtivo } = await supabaseAdmin
       .from('processamentos_lancamentos')
       .update(patchStatus({
         status: 'aguardando_confirmacao',
         lancamentos_ai: { lancamentos },
       }))
       .eq('id', processamentoId)
+      .in('status', [...STATUS_SLOT_OCUPADO])
+      .select('id')
+      .maybeSingle()
+
+    if (!concluidoAtivo) {
+      throw new ProcessamentoAdiadoError()
+    }
 
     if (proc.content_hash) {
       await salvarExtracaoCache(supabaseAdmin, proc.content_hash, analise, lancamentos)
@@ -286,6 +317,10 @@ export async function executarProcessamento(processamentoId: string): Promise<Re
     if (err instanceof ProcessamentoCanceladoError) {
       await finalizarProcessamentoCancelado(supabaseAdmin, processamentoId)
       return { ok: false, cancelled: true }
+    }
+
+    if (err instanceof ProcessamentoAdiadoError) {
+      return { ok: false, adiado: true }
     }
 
     const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido'
