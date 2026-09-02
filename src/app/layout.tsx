@@ -12,7 +12,7 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
-  title: "Tabelões - Catalogador de Imóveis",
+  title: "BuscaImob - Catalogador de Imóveis",
   description: "Sistema de catalogação de tabelas de construtoras em banco de dados mestre",
 };
 

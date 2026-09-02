@@ -116,7 +116,7 @@ function SidebarContent({
       )}>
         {!effectiveCollapsed && (
           <Link href="/" onClick={onCloseMobile} className="font-bold text-lg text-sidebar-foreground truncate">
-            Tabelões
+            BuscaImob
           </Link>
         )}
         {isMobile ? (
@@ -296,7 +296,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           >
             <PanelLeftOpen className="size-6" />
           </button>
-          <span className="font-semibold text-lg text-gray-900 truncate flex-1">Tabelões</span>
+          <span className="font-semibold text-lg text-gray-900 truncate flex-1">BuscaImob</span>
         </header>
 
         <main
